@@ -404,15 +404,16 @@ class GreedySearchAgent(SearchAgent):
 
         return self.finish_search()
 
+        # ...existing code...
     def finish_search(self):
         """
-        Processes the aggregated results from all trials to find the most frequent patterns.
-        This method remains unchanged.
+        Processes the aggregated results from all trials to find the top 3 and rarest 3 patterns per pattern size.
         """
         if self.analyze:
-            pass
+            pass  # Add analysis code here if needed
 
         cand_patterns_uniq = []
+        cand_patterns_rare = []
         for pattern_size in range(self.min_pattern_size, self.max_pattern_size + 1):
             if self.rank_method == "hybrid":
                 if self.counts[pattern_size]:
@@ -434,19 +435,31 @@ class GreedySearchAgent(SearchAgent):
                     if wl_hash not in wl_hashes:
                         wl_hashes.add(wl_hash)
                         cand_patterns_uniq_size.append(pattern)
-                        if len(cand_patterns_uniq_size) >= self.out_batch_size:
+                        if len(cand_patterns_uniq_size) >= 3:  # limit to top 3
                             break
                 cand_patterns_uniq.extend(cand_patterns_uniq_size)
-                
+
             elif cur_rank_method == "counts":
                 sorted_counts = sorted(self.counts[pattern_size].items(), key=lambda x: len(x[1]), reverse=True)
-                for _, neighs in sorted_counts[:self.out_batch_size]:
+                top_patterns = sorted_counts[:3]
+                for _, neighs in top_patterns:
                     cand_patterns_uniq.append(random.choice(neighs))
+
+                # Now get the rarest 3
+                rare_counts = sorted(self.counts[pattern_size].items(), key=lambda x: len(x[1]))
+                rare_patterns = rare_counts[:3]
+                for _, neighs in rare_patterns:
+                    cand_patterns_rare.append(random.choice(neighs))
+
             else:
                 print("Unrecognized rank method")
-                
-        return cand_patterns_uniq
 
+        # Combine results or return separately as needed
+        return {
+            "top_patterns": cand_patterns_uniq,
+            "rare_patterns": cand_patterns_rare
+        }
+# ...existing code...
 class MemoryEfficientGreedyAgent(GreedySearchAgent):
     def __init__(self, min_pattern_size, max_pattern_size, model, dataset,
         embs, node_anchored=False, analyze=False, rank_method="counts",

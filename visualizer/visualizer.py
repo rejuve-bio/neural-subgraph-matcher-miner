@@ -665,7 +665,7 @@ def process_html_template(graph_data: Dict[str, Any],
     processor = HTMLTemplateProcessor(template_path)
     return processor.process_template(graph_data, output_filename, output_dir)
 
-def visualize_pattern_graph_ext(pattern, args, count_by_size):
+def visualize_pattern_graph_ext(pattern, args, count_by_size, save_dir="plots/cluster" ):
     """
     Main visualizer integration function matching existing API signature.
     """
@@ -718,23 +718,19 @@ def visualize_pattern_graph_ext(pattern, args, count_by_size):
         try:
             import os
             # Ensure output directory exists
-            output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "plots/cluster"))
-            output_dir = os.path.abspath(output_dir)
+            output_dir = os.path.abspath(save_dir)
             os.makedirs(output_dir, exist_ok=True)
 
             template_path = os.path.join(os.path.dirname(__file__), "template.html")
             processor = HTMLTemplateProcessor(template_path)
             
-            # Generate filename based on graph characteristics and count_by_size
             base_filename = _generate_pattern_filename(pattern, count_by_size)
             
-            # Process template and create HTML file in plots/cluster
             output_path = processor.process_template(
                 graph_data=graph_data,
                 output_filename=base_filename,
                 output_dir=output_dir
             )
-            
             logger.info(f"HTML visualization created successfully: {output_path}")
 
         except FileNotFoundError as e:
