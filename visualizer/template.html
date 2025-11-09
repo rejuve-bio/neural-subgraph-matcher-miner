@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <title>Interactive Graph Visualizer</title>
     <style>
         :root {
@@ -175,7 +176,7 @@
 
         /* Legend card styling */
         #legend-card {
-            min-width: 220px;
+            min-width: 200px;
             max-width: 280px;
             max-height: 400px;
             overflow-y: auto;
@@ -370,6 +371,194 @@
             opacity: 0.2;
         }
 
+        /* Chatbot card styling */
+        .chatbot-left {
+            position: absolute;
+            left: 20px;
+            top: 80px;
+            box-shadow: var(--card-shadow);
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            transition: left 0.2s, top 0.2s, width 0.2s, height 0.2s;
+            user-select: none;
+        }
+        #chatbot-card {
+            position: absolute;
+            left: 20px;
+            top: 80px;
+            z-index: 1100;
+            width: 340px;
+            min-width: 220px;
+            max-width: 480px;
+            height: 420px;
+            min-height: 120px;
+            max-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: var(--card-shadow);
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            transition: box-shadow 0.2s;
+            user-select: none;
+            resize: both;
+            overflow: auto;
+        }
+
+        #chatbot-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-light);
+            cursor: move;
+        }
+
+        #chatbot-header span {
+            font-weight: 600;
+            font-size: 15px;
+        }
+
+        #chatbot-min-btn,
+        #chatbot-max-btn {
+            margin-right: 4px;
+            padding: 4px 10px;
+            font-size: 15px;
+            border: 1px solid var(--border-light);
+            border-radius: 4px;
+            background: white;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        #chatbot-max-btn {
+            margin-right: 0;
+        }
+
+        #chatbot-min-btn:hover,
+        #chatbot-max-btn:hover {
+            background: var(--bg-primary);
+            border-color: var(--text-secondary);
+        }
+
+        #chatbot-apikey-area {
+            padding: 8px 0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        #chatbot-apikey-input {
+            width: 80%;
+            padding: 6px;
+            font-size: 13px;
+            border: 1px solid var(--border-light);
+            border-radius: 4px;
+        }
+
+        #chatbot-apikey-save {
+            padding: 6px 10px;
+            font-size: 13px;
+            border: 1px solid var(--border-light);
+            border-radius: 4px;
+            background: white;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        #chatbot-apikey-save:hover {
+            background: var(--bg-primary);
+            border-color: var(--text-secondary);
+        }
+
+        #chatbot-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        #chatbot-input-area {
+            display: flex;
+            gap: 6px;
+            padding-bottom: 8px;
+        }
+
+        #chatbot-user-input {
+            flex: 1;
+            padding: 7px;
+            font-size: 13px;
+            border: 1px solid var(--border-light);
+            border-radius: 4px;
+        }
+
+        #chatbot-send-btn {
+            padding: 7px 10px;
+            background: white;
+            border: 1px solid var(--border-light);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #chatbot-send-btn:hover {
+            background: var(--bg-primary);
+            border-color: var(--text-secondary);
+        }
+
+        .chatbot-minimized {
+            height: 48px !important;
+            min-height: 48px !important;
+            max-height: 48px !important;
+            width: 220px !important;
+            min-width: 220px !important;
+            max-width: 220px !important;
+            overflow: hidden !important;
+        }
+
+        .chatbot-maximized {
+            width: 340px !important;     
+            min-width: 220px !important;
+            max-width: 480px !important;
+            height: 95% !important;     
+            min-height: 120px !important;
+            max-height: 95% !important;
+            left: 20px !important;
+            top: 0 !important;
+            bottom: 0 !important;
+            margin: 20px !important; 
+            z-index: 1200 !important;
+            resize: both !important;   
+            overflow: auto !important;
+        }
+
+        #chatbot-apikey-input.blurred {
+            filter: blur(2px);
+            transition: filter 0.3s;
+        }
+
+        /* Submenu */
+        #copy-submenu .context-menu-item {
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--text-primary);
+            transition: background-color 0.2s ease;
+        }
+
+        #copy-submenu .context-menu-item:hover {
+            background-color: var(--bg-primary);
+        }
+
         /* Responsive design */
         @media (max-width: 768px) {
             .ui-card {
@@ -494,196 +683,216 @@
         <div class="context-menu-item" id="cancel-isolate" style="display: none;">Cancel Isolate</div>
     </div>
 
+    <!-- Sub Context Menu for Copy Options -->
+    <div id="copy-submenu" class="hidden" style="position: absolute; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 6px; box-shadow: var(--card-shadow); backdrop-filter: blur(10px); z-index: 2001; padding: 4px 0; min-width: 120px;">
+        <!-- Copy options will be populated dynamically -->
+    </div>
+
+    <!-- Chatbot UI -->
+    <div id="chatbot-card" class="ui-card chatbot-left">
+        <div id="chatbot-header">
+            <span>Graph Chatbot</span>
+            <div>
+                <button id="chatbot-min-btn" title="Minimize">−</button>
+                <button id="chatbot-max-btn" title="Maximize">□</button>
+            </div>
+        </div>
+        <div id="chatbot-apikey-area">
+            <input id="chatbot-apikey-input" type="text" placeholder="Enter API Key (Gemini/ChatGPT)">
+            <button id="chatbot-apikey-save">Save</button>
+        </div>
+        <div id="chatbot-messages"></div>
+        <div id="chatbot-input-area">
+            <input id="chatbot-user-input" type="text" placeholder="Ask about the current graph...">
+            <button id="chatbot-send-btn" title="Send" style="display: flex; align-items: center; justify-content: center;">
+                <svg width="22" height="22" viewBox="0 0 22 22" fill="none" style="pointer-events: none;">
+                    <path d="M2 11L20 2L11 20L10 13L2 11Z" fill="#374151"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
     <script>
         // Sample 7-node directed graph data
-        const GRAPH_DATA = {
+const GRAPH_DATA = {
         "metadata": {
                 "title": "Directed Graph with Anchors",
-                "nodeCount": 11,
-                "edgeCount": 10,
+                "nodeCount": 9,
+                "edgeCount": 8,
                 "isDirected": true,
-                "density": 0.091
+                "density": 0.111
         },
         "nodes": [
                 {
-                        "id": "enst00000316891",
+                        "id": "enst00000327031",
                         "label": "transcript",
-                        "transcript_name": "TRIT1-201",
-                        "gene_name": "TRIT1",
+                        "transcript_name": "FLII-201",
+                        "gene_name": "FLII",
                         "anchor": false,
-                        "x": 27.65196752359671,
-                        "y": 197.0768524739416
+                        "x": 37.86558831996981,
+                        "y": 186.94850464195946,
+                        "display_label": "id: enst00000327031\nlabel: transcript\ntranscript_name: FLII-201\ngene_name: FLII"
                 },
                 {
-                        "id": "enst00000441669",
+                        "id": "enst00000545457",
                         "label": "transcript",
-                        "transcript_name": "TRIT1-203",
-                        "gene_name": "TRIT1",
-                        "anchor": false,
-                        "x": 198.15733023744193,
-                        "y": 37.6455322302267
-                },
-                {
-                        "id": "q9h3h1-1",
-                        "label": "protein",
-                        "protein_name": "MOD5",
-                        "isoform_name": "1",
-                        "anchor": false,
-                        "x": -95.0809692854939,
-                        "y": -177.28703171738803
-                },
-                {
-                        "id": "enst00000372818",
-                        "label": "transcript",
-                        "transcript_name": "TRIT1-202",
-                        "gene_name": "TRIT1",
-                        "anchor": false,
-                        "x": -166.60054744627251,
-                        "y": 98.79798083873025
-                },
-                {
-                        "id": "enst00000491865",
-                        "label": "transcript",
-                        "transcript_name": "TRIT1-211",
-                        "gene_name": "TRIT1",
-                        "anchor": false,
-                        "x": 134.0590518547878,
-                        "y": 137.61826291770697
-                },
-                {
-                        "id": "q9h3h1-4",
-                        "label": "protein",
-                        "protein_name": "MOD5",
-                        "isoform_name": "4",
-                        "anchor": false,
-                        "x": -93.3767504466559,
-                        "y": 183.95972216092807
-                },
-                {
-                        "id": "q9h3h1-5",
-                        "label": "protein",
-                        "protein_name": "MOD5",
-                        "isoform_name": "5",
+                        "transcript_name": "FLII-215",
+                        "gene_name": "FLII",
                         "anchor": false,
                         "x": 200.0,
-                        "y": -83.77624813100846
+                        "y": -9.733839707619794,
+                        "display_label": "id: enst00000545457\nlabel: transcript\ntranscript_name: FLII-215\ngene_name: FLII"
                 },
                 {
-                        "id": "enst00000465417",
+                        "id": "enst00000579294",
                         "label": "transcript",
-                        "transcript_name": "TRIT1-206",
-                        "gene_name": "TRIT1",
+                        "transcript_name": "FLII-222",
+                        "gene_name": "FLII",
                         "anchor": false,
-                        "x": -151.2725718127031,
-                        "y": -93.40322484041486
+                        "x": -101.80798790562942,
+                        "y": -177.45978382619262,
+                        "display_label": "id: enst00000579294\nlabel: transcript\ntranscript_name: FLII-222\ngene_name: FLII"
                 },
                 {
-                        "id": "enst00000467774",
+                        "id": "enst00000465046",
                         "label": "transcript",
-                        "transcript_name": "TRIT1-207",
-                        "gene_name": "TRIT1",
+                        "transcript_name": "FLII-204",
+                        "gene_name": "FLII",
                         "anchor": false,
-                        "x": -166.33749633917537,
-                        "y": 4.219155404037533
+                        "x": -178.2745540893634,
+                        "y": 55.31235712780913,
+                        "display_label": "id: enst00000465046\nlabel: transcript\ntranscript_name: FLII-204\ngene_name: FLII"
                 },
                 {
-                        "id": "enst00000462243",
+                        "id": "enst00000493600",
                         "label": "transcript",
-                        "transcript_name": "TRIT1-204",
-                        "gene_name": "TRIT1",
+                        "transcript_name": "FLII-213",
+                        "gene_name": "FLII",
                         "anchor": false,
-                        "x": 18.033079069290444,
-                        "y": -188.57476352637613
+                        "x": 147.67823527259662,
+                        "y": 115.30335104212371,
+                        "display_label": "id: enst00000493600\nlabel: transcript\ntranscript_name: FLII-213\ngene_name: FLII"
                 },
                 {
-                        "id": "ensg00000043514",
+                        "id": "enst00000487693",
+                        "label": "transcript",
+                        "transcript_name": "FLII-209",
+                        "gene_name": "FLII",
+                        "anchor": false,
+                        "x": -106.88065794367503,
+                        "y": 168.15655174067854,
+                        "display_label": "id: enst00000487693\nlabel: transcript\ntranscript_name: FLII-209\ngene_name: FLII"
+                },
+                {
+                        "id": "ensg00000177731",
                         "label": "gene",
-                        "gene_name": "TRIT1",
+                        "gene_name": "FLII",
                         "anchor": true,
-                        "x": 94.7669066451839,
-                        "y": -116.27623781038359
+                        "x": 121.08637152994241,
+                        "y": -86.05475010477761,
+                        "display_label": "id: ensg00000177731\nlabel: gene\ngene_name: FLII"
+                },
+                {
+                        "id": "q13045-1",
+                        "label": "protein",
+                        "protein_name": "FLII",
+                        "isoform_name": "1",
+                        "anchor": false,
+                        "x": 34.396981420983884,
+                        "y": -187.12623765434927,
+                        "display_label": "id: q13045-1\nlabel: protein\nprotein_name: FLII\nisoform_name: 1"
+                },
+                {
+                        "id": "q13045-2",
+                        "label": "protein",
+                        "protein_name": "FLII",
+                        "isoform_name": "2",
+                        "anchor": false,
+                        "x": -154.06397660482494,
+                        "y": -65.3461532596316,
+                        "display_label": "id: q13045-2\nlabel: protein\nprotein_name: FLII\nisoform_name: 2"
                 }
         ],
         "edges": [
                 {
-                        "label": "translates_to",
+                        "type": "translates_to",
+                        "input_label": "translates_to",
                         "weight": 1.0,
-                        "source": "enst00000316891",
-                        "target": "q9h3h1-1",
+                        "source": "enst00000327031",
+                        "target": "q13045-1",
                         "directed": true,
-                        "direction": "enst00000316891 -> q9h3h1-1",
+                        "direction": "enst00000327031 -> q13045-1",
+                        "label": "translates_to"
                 },
                 {
-                        "label": "translates_to",
+                        "type": "translates_to",
+                        "input_label": "translates_to",
                         "weight": 1.0,
-                        "source": "enst00000441669",
-                        "target": "q9h3h1-5",
+                        "source": "enst00000545457",
+                        "target": "q13045-2",
                         "directed": true,
-                        "direction": "enst00000441669 -> q9h3h1-5",
+                        "direction": "enst00000545457 -> q13045-2",
+                        "label": "translates_to"
                 },
                 {
-                        "label": "translates_to",
+                        "type": "transcribed_to",
+                        "input_label": "transcribed_to",
                         "weight": 1.0,
-                        "source": "enst00000372818",
-                        "target": "q9h3h1-4",
+                        "source": "ensg00000177731",
+                        "target": "enst00000327031",
                         "directed": true,
-                        "direction": "enst00000372818 -> q9h3h1-4",
+                        "direction": "ensg00000177731 -> enst00000327031",
+                        "label": "transcribed_to"
                 },
                 {
-                        "label": "transcribed_to",
+                        "type": "transcribed_to",
+                        "input_label": "transcribed_to",
                         "weight": 1.0,
-                        "source": "ensg00000043514",
-                        "target": "enst00000316891",
+                        "source": "ensg00000177731",
+                        "target": "enst00000545457",
                         "directed": true,
-                        "direction": "ensg00000043514 -> enst00000316891",
+                        "direction": "ensg00000177731 -> enst00000545457",
+                        "label": "transcribed_to"
                 },
                 {
-                        "label": "transcribed_to",
+                        "type": "transcribed_to",
+                        "input_label": "transcribed_to",
                         "weight": 1.0,
-                        "source": "ensg00000043514",
-                        "target": "enst00000441669",
+                        "source": "ensg00000177731",
+                        "target": "enst00000579294",
                         "directed": true,
-                        "direction": "ensg00000043514 -> enst00000441669",
+                        "direction": "ensg00000177731 -> enst00000579294",
+                        "label": "transcribed_to"
                 },
                 {
-                        "label": "transcribed_to",
+                        "type": "transcribed_to",
+                        "input_label": "transcribed_to",
                         "weight": 1.0,
-                        "source": "ensg00000043514",
-                        "target": "enst00000372818",
+                        "source": "ensg00000177731",
+                        "target": "enst00000465046",
                         "directed": true,
-                        "direction": "ensg00000043514 -> enst00000372818",
+                        "direction": "ensg00000177731 -> enst00000465046",
+                        "label": "transcribed_to"
                 },
                 {
-                        "label": "transcribed_to",
+                        "type": "transcribed_to",
+                        "input_label": "transcribed_to",
                         "weight": 1.0,
-                        "source": "ensg00000043514",
-                        "target": "enst00000491865",
+                        "source": "ensg00000177731",
+                        "target": "enst00000493600",
                         "directed": true,
-                        "direction": "ensg00000043514 -> enst00000491865",
+                        "direction": "ensg00000177731 -> enst00000493600",
+                        "label": "transcribed_to"
                 },
                 {
-                        "label": "transcribed_to",
+                        "type": "transcribed_to",
+                        "input_label": "transcribed_to",
                         "weight": 1.0,
-                        "source": "ensg00000043514",
-                        "target": "enst00000465417",
+                        "source": "ensg00000177731",
+                        "target": "enst00000487693",
                         "directed": true,
-                        "direction": "ensg00000043514 -> enst00000465417",
-                },
-                {
-                        "label": "transcribed_to",
-                        "weight": 1.0,
-                        "source": "ensg00000043514",
-                        "target": "enst00000467774",
-                        "directed": true,
-                        "direction": "ensg00000043514 -> enst00000467774",
-                },
-                {
-                        "label": "transcribed_to",
-                        "weight": 1.0,
-                        "source": "ensg00000043514",
-                        "target": "enst00000462243",
-                        "directed": true,
-                        "direction": "ensg00000043514 -> enst00000462243",
+                        "direction": "ensg00000177731 -> enst00000487693",
+                        "label": "transcribed_to"
                 }
         ],
         "legend": {
@@ -691,34 +900,33 @@
                         {
                                 "label": "gene",
                                 "color": "rgba(59, 130, 246, 0.7)",
-                                "description": "gene"
-                        },
-                        {
-                                "label": "transcript",
-                                "color": "rgba(34, 197, 94, 0.7)",
-                                "description": "transcript"
+                                "description": "Gene nodes"
                         },
                         {
                                 "label": "protein",
-                                "color": "rgba(245, 101, 101, 0.7)",
-                                "description": "Protein"
+                                "color": "rgba(34, 197, 94, 0.7)",
+                                "description": "Protein nodes"
+                        },
+                        {
+                                "label": "transcript",
+                                "color": "rgba(251, 191, 36, 0.7)",
+                                "description": "Transcript nodes"
                         }
                 ],
                 "edgeTypes": [
                         {
                                 "label": "transcribed_to",
-                                "color": "rgba(34, 100, 94, 0.7)",
-                                "description": "transcribed_to"
+                                "color": "rgba(59, 130, 246, 0.6)",
+                                "description": "Transcribed To edges"
                         },
                         {
                                 "label": "translates_to",
-                                "color": "rgba(245, 190, 101, 0.7)",
-                                "description": "translates_to"
+                                "color": "rgba(34, 197, 94, 0.6)",
+                                "description": "Translates To edges"
                         }
-                    ]
-                }
-            };
-
+                ]
+        }
+};
         // Dynamic Style Management System
         class StyleManager {
             constructor() {
@@ -736,7 +944,7 @@
                 
                 // Discover all unique node types (excluding anchors as they have special handling)
                 nodes.forEach(node => {
-                    if (node.label && !node.anchor) {
+                    if (node.label) {
                         this.discoveredNodeTypes.add(node.label);
                     }
                 });
@@ -963,9 +1171,13 @@
                 
                 const colorBox = document.createElement('div');
                 colorBox.className = 'legend-shape';
-                colorBox.style.backgroundColor = 'rgba(239, 68, 68, 0.8)';
                 colorBox.style.borderRadius = '2px'; // Make it more square-like
-                
+                let anchorColor = 'rgba(239, 68, 68, 0.8)';
+                const anchorNode = (GRAPH_DATA.nodes || []).find(n => n.anchor);
+                if (anchorNode && window.styleManager) {
+                    anchorColor = window.styleManager.getNodeColor(anchorNode.label);
+                }
+                colorBox.style.backgroundColor = anchorColor;
                 const label = document.createElement('span');
                 label.textContent = 'Anchor Nodes';
                 
@@ -1472,6 +1684,7 @@
                 }
                 
                 // Hide context menu on any click
+                this.hideCopySubmenu()
                 this.hideContextMenu();
             }
             
@@ -1503,11 +1716,11 @@
                     }
                 });
                 
-                // Copy label functionality
-                document.getElementById('copy-label').addEventListener('click', () => {
+                // Copy label functionality - now shows submenu
+                document.getElementById('copy-label').addEventListener('click', (e) => {
+                    e.stopPropagation();
                     if (this.contextMenuNode) {
-                        this.copyNodeLabel(this.contextMenuNode);
-                        this.hideContextMenu();
+                        this.showCopySubmenu(e.clientX, e.clientY, this.contextMenuNode);
                     }
                 });
                 
@@ -1517,13 +1730,22 @@
                     this.hideContextMenu();
                 });
                 
-                // Hide context menu when clicking outside
+                // Simplified global click handler
                 document.addEventListener('click', (e) => {
-                    if (!this.contextMenu.contains(e.target)) {
-                        this.hideContextMenu();
+                    const contextMenu = document.getElementById('context-menu');
+                    const submenu = document.getElementById('copy-submenu');
+                    
+                    // Only hide if clicking outside both menus
+                    if (!contextMenu.contains(e.target) && !submenu.contains(e.target)) {
+                        contextMenu.classList.add('hidden');
+                        contextMenu.style.display = 'none';
+                        submenu.classList.add('hidden');
+                        submenu.style.display = 'none';
+                        this.contextMenuNode = null;
                     }
                 });
             }
+            
             
             showContextMenu(x, y, node) {
                 this.contextMenuNode = node;
@@ -1542,7 +1764,8 @@
                     cancelIsolateItem.style.display = 'none';
                 }
                 
-                // Position context menu
+                // Reset display style and show context menu
+                this.contextMenu.style.display = 'block'; // <-- Add this line
                 this.contextMenu.style.left = x + 'px';
                 this.contextMenu.style.top = y + 'px';
                 this.contextMenu.classList.remove('hidden');
@@ -1556,41 +1779,109 @@
                     this.contextMenu.style.top = (y - rect.height) + 'px';
                 }
             }
+            hideCopySubmenu() {
+                document.getElementById('copy-submenu').classList.add('hidden');
+            }
+
             
-            hideContextMenu() {
-                this.contextMenu.classList.add('hidden');
+            // hideContextMenu() {
+            //     document.getElementById('context-menu').classList.add('hidden');
+            //     this.hideCopySubmenu();
+            //     this.contextMenuNode = null;
+            // }
+
+            showCopySubmenu(x, y, node) {
+                const submenu = document.getElementById('copy-submenu');
+                const displayLabel = node.display_label || node.label;
+                
+                // Parse the label to extract key-value pairs
+                const labelPairs = this.parseLabelComponents(displayLabel);
+                
+                // Clear existing submenu items
+                submenu.innerHTML = '';
+                
+                // Create submenu items for each label component
+                labelPairs.forEach(pair => {
+                    const item = document.createElement('div');
+                    item.className = 'context-menu-item';
+                    item.textContent = pair.key;
+                    item.style.fontSize = '13px';
+                    
+                    // Use addEventListener instead of onclick for better control
+                    item.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        
+                        this.copyToClipboard(pair.value);
+                        
+                        // Set a flag and hide menus
+                        this.submenuClosing = true;
+                        this.forceHideAllMenus();
+                    });
+                    
+                    submenu.appendChild(item);
+                });
+                
+                // Position submenu and show it
+                submenu.style.display = 'block';  // <-- Add this
+                submenu.style.left = x + 'px';
+                submenu.style.top = y + 'px';
+                submenu.classList.remove('hidden');
+                
+                // Ensure submenu stays within viewport
+                const rect = submenu.getBoundingClientRect();
+                if (rect.right > window.innerWidth) {
+                    submenu.style.left = (x - rect.width) + 'px';
+                }
+                if (rect.bottom > window.innerHeight) {
+                    submenu.style.top = (y - rect.height) + 'px';
+                }
+                
+                console.log('Submenu should be visible now'); // <-- Add this for debugging
+            }
+            
+            forceHideAllMenus() {
+                const contextMenu = document.getElementById('context-menu');
+                const submenu = document.getElementById('copy-submenu');
+                
+                // Force hide both menus
+                contextMenu.classList.add('hidden');
+                contextMenu.style.display = 'none';
+                submenu.classList.add('hidden');
+                submenu.style.display = 'none';
+                
                 this.contextMenuNode = null;
             }
-            
-            isolateNode(node) {
-                this.isolatedNode = node;
-                console.log(`Isolated node: ${node.label || node.id}`);
-                this.render(); // Re-render to apply isolation effects
+            parseLabelComponents(displayLabel) {
+                const lines = displayLabel.split('\n');
+                const pairs = [];
+                
+                lines.forEach(line => {
+                    const colonIndex = line.indexOf(':');
+                    if (colonIndex !== -1) {
+                        const key = line.substring(0, colonIndex).trim();
+                        const value = line.substring(colonIndex + 1).trim();
+                        pairs.push({ key, value });
+                    }
+                });
+                
+                return pairs;
             }
-            
-            cancelIsolation() {
-                this.isolatedNode = null;
-                console.log('Isolation cancelled');
-                this.render(); // Re-render to remove isolation effects
-            }
-            
-            copyNodeLabel(node) {
-                // Copy only the label (or id) of the specific node
-                const label = node.display_label || node.label;
 
+            copyToClipboard(text) {
                 if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(label).then(() => {
-                        console.log('Node label copied to clipboard');
-                        this.showCopyFeedback();
+                    navigator.clipboard.writeText(text).then(() => {
+                        console.log('Copied to clipboard:', text);
+                        this.showCopyFeedback(`Copied: ${text}`);
                     }).catch(err => {
                         console.error('Failed to copy to clipboard:', err);
-                        this.fallbackCopyToClipboard(label);
+                        this.fallbackCopyToClipboard(text);
                     });
                 } else {
-                    this.fallbackCopyToClipboard(label);
+                    this.fallbackCopyToClipboard(text);
                 }
             }
-            
+
             fallbackCopyToClipboard(text) {
                 const textArea = document.createElement('textarea');
                 textArea.value = text;
@@ -1612,8 +1903,8 @@
                 
                 document.body.removeChild(textArea);
             }
-            
-            showCopyFeedback() {
+
+           showCopyFeedback() {
                 // Create temporary feedback element
                 const feedback = document.createElement('div');
                 feedback.textContent = 'Labels copied to clipboard!';
@@ -1641,6 +1932,41 @@
                         document.body.removeChild(feedback);
                     }
                 }, 2000);
+            }
+
+            hideContextMenu() {
+                const contextMenu = document.getElementById('context-menu');
+                contextMenu.classList.add('hidden');
+                contextMenu.style.display = 'none';
+                this.contextMenuNode = null;
+            }
+            isolateNode(node) {
+                this.isolatedNode = node;
+                console.log(`Isolated node: ${node.label || node.id}`);
+                this.render(); // Re-render to apply isolation effects
+            }
+            
+            cancelIsolation() {
+                this.isolatedNode = null;
+                console.log('Isolation cancelled');
+                this.render(); // Re-render to remove isolation effects
+            }
+            
+            copyNodeLabel(node) {
+                // Copy only the label (or id) of the specific node
+                const label = node.display_label || node.label;
+
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(label).then(() => {
+                        console.log('Node label copied to clipboard');
+                        this.showCopyFeedback();
+                    }).catch(err => {
+                        console.error('Failed to copy to clipboard:', err);
+                        this.fallbackCopyToClipboard(label);
+                    });
+                } else {
+                    this.fallbackCopyToClipboard(label);
+                }
             }
             
             getTestNodes() {
@@ -2306,9 +2632,6 @@
             }
             
             getNodeColor(node) {
-                if (node.anchor) {
-                    return 'rgba(239, 68, 68, 0.8)'; // Fixed red color for anchor nodes
-                }
                 
                 // Get or generate color for this node type
                 return window.styleManager.getNodeColor(node.label);
@@ -2557,8 +2880,8 @@
                 const endY = bottomRight.y;
                 
                 // Enhanced origin axes with gradient-like effect
-                ctx.strokeStyle = 'rgba(59, 130, 246, 0.15)';
-                ctx.lineWidth = lineWidth * 3;
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.03)';
+                ctx.lineWidth = lineWidth * 1.5;
                 
                 // X-axis
                 if (startY <= 0 && endY >= 0) {
@@ -2574,14 +2897,6 @@
                     ctx.moveTo(0, startY);
                     ctx.lineTo(0, endY);
                     ctx.stroke();
-                }
-                
-                // Add subtle center point indicator
-                if (startX <= 0 && endX >= 0 && startY <= 0 && endY >= 0) {
-                    ctx.fillStyle = 'rgba(59, 130, 246, 0.2)';
-                    ctx.beginPath();
-                    ctx.arc(0, 0, 4 / this.transform.scale, 0, 2 * Math.PI);
-                    ctx.fill();
                 }
             }
             
@@ -3757,6 +4072,235 @@
             });
             
             console.log('Interactive Graph Visualizer with navigation system and UI components loaded successfully');
+        });
+
+        // AI
+        class GraphChatbot {
+            constructor() {
+                this.card = document.getElementById('chatbot-card');
+                this.minBtn = document.getElementById('chatbot-min-btn');
+                this.maxBtn = document.getElementById('chatbot-max-btn');
+                this.header = document.getElementById('chatbot-header');
+                this.apiKey = '';
+                this.messagesDiv = document.getElementById('chatbot-messages');
+                this.isMinimized = false;
+                this.isMaximized = false;
+                this.dragOffsetX = 0;
+                this.dragOffsetY = 0;
+                this.dragging = false;
+                this.init();
+                this.loadApiKey();
+                this.contextSent = false;
+            }
+
+            init() {
+                this.minBtn.onclick = () => this.toggleMinimize();
+                this.maxBtn.onclick = () => this.toggleMaximize();
+                this.header.onmousedown = (e) => this.startDrag(e);
+                document.onmousemove = (e) => this.handleDrag(e);
+                document.onmouseup = () => this.stopDrag();
+
+                document.getElementById('chatbot-apikey-save').onclick = () => this.saveApiKey();
+                // window.addEventListener('DOMContentLoaded', () => this.loadApiKey());
+
+                document.getElementById('chatbot-send-btn').onclick = () => this.sendChatbotQuery();
+                document.getElementById('chatbot-user-input').onkeydown = (e) => {
+                    if (e.key === 'Enter') this.sendChatbotQuery();
+                };
+
+                const apiKeyInput = document.getElementById('chatbot-apikey-input');
+
+                apiKeyInput.addEventListener('focus', function() {
+                    this.classList.remove('blurred');
+                });
+
+                apiKeyInput.addEventListener('blur', function() {
+                    if (this.value.trim()) {
+                        this.classList.add('blurred');
+                    } else {
+                        this.classList.remove('blurred');
+                    }
+                });
+            }
+
+            toggleMinimize() {
+                this.isMinimized = !this.isMinimized;
+                if (this.isMinimized) {
+                    this.card.classList.add('chatbot-minimized');
+                    this.card.classList.remove('chatbot-maximized');
+                    this.card.style.left = '20px';
+                    this.card.style.bottom = '20px';
+                    this.card.style.top = 'auto';
+                    this.card.style.removeProperty('width');
+                    this.card.style.removeProperty('height');
+                    this.card.style.removeProperty('overflow');
+                } else {
+                    this.card.classList.remove('chatbot-minimized');
+                    this.card.style.left = '20px';
+                    this.card.style.top = '80px';
+                    this.card.style.bottom = 'auto';
+                    this.card.style.removeProperty('width');
+                    this.card.style.removeProperty('height');
+                    this.card.style.removeProperty('overflow');
+                }
+            }
+
+            toggleMaximize() {
+                this.isMaximized = !this.isMaximized;
+                if (this.isMaximized) {
+                    this.card.classList.add('chatbot-maximized');
+                    this.card.classList.remove('chatbot-minimized');
+                    this.card.style.removeProperty('width');
+                    this.card.style.removeProperty('height');
+                    this.card.style.removeProperty('overflow');
+                } else {
+                    this.card.classList.remove('chatbot-maximized');
+                    this.card.style.removeProperty('width');
+                    this.card.style.removeProperty('height');
+                    this.card.style.removeProperty('overflow');
+                }
+            }
+
+            startDrag(e) {
+                if (this.isMinimized) return;
+                this.dragging = true;
+                this.dragOffsetX = e.clientX - this.card.offsetLeft;
+                this.dragOffsetY = e.clientY - this.card.offsetTop;
+                document.body.style.cursor = 'move';
+            }
+
+            handleDrag(e) {
+                if (this.dragging && !this.isMinimized) {
+                    this.card.style.left = Math.max(0, e.clientX - this.dragOffsetX) + 'px';
+                    this.card.style.top = Math.max(0, e.clientY - this.dragOffsetY) + 'px';
+                }
+            }
+
+            stopDrag() {
+                this.dragging = false;
+                document.body.style.cursor = '';
+            }
+
+            saveApiKey() {
+                this.apiKey = document.getElementById('chatbot-apikey-input').value.trim();
+                const inputElem = document.getElementById('chatbot-apikey-input');
+                if (this.apiKey) {
+                    localStorage.setItem('graph_chatbot_apikey', this.apiKey);
+                    inputElem.classList.add('blurred'); // Keep blurred until changed
+                    alert('API Key saved!');
+                }
+            }
+            loadApiKey() {
+                const savedKey = localStorage.getItem('graph_chatbot_apikey');
+                const inputElem = document.getElementById('chatbot-apikey-input');
+                if (savedKey) {
+                    this.apiKey = savedKey;
+                    inputElem.value = savedKey;         // Show that something is entered
+                    inputElem.classList.add('blurred'); // Blur on load
+                } else {
+                    inputElem.value = '';
+                    inputElem.classList.remove('blurred');
+                }
+            }
+
+            addMessage(text, sender = 'user') {
+                const msg = document.createElement('pre');
+                msg.style.marginBottom = '8px';
+                msg.style.padding = '6px 10px';
+                msg.style.borderRadius = '6px';
+                msg.style.background = sender === 'user' ? 'var(--bg-primary)' : 'var(--node-default)';
+                msg.style.color = sender === 'user' ? '#222' : '#fff';
+                msg.style.textAlign = sender === 'user' ? 'right' : 'left';
+                msg.style.whiteSpace = 'pre-wrap';
+                msg.style.userSelect = 'text';
+                if (sender === 'bot') {
+                    // Render markdown as HTML for bot messages
+                    msg.innerHTML = marked.parse(text);
+                    msg.style.fontFamily = 'inherit';
+                    msg.style.background = 'var(--node-default)';
+                    msg.style.color = '#fff';
+                    msg.style.textAlign = 'left';
+                } else {
+                    msg.textContent = text;
+                }
+                this.messagesDiv.appendChild(msg);
+                this.messagesDiv.scrollTop = this.messagesDiv.scrollHeight;
+            }
+
+            // Helper: get current graph context as a summary string
+            getGraphContext() {
+                // Serialize the full graph data as JSON
+                const context = JSON.stringify(GRAPH_DATA, null, 2);
+                console.log('Graph context JSON:', context);
+                return context;
+            }
+
+
+            getApiProvider(apiKey) {
+                if (apiKey.startsWith('sk-')) return 'openai';
+                if (apiKey.length > 30 && apiKey.match(/^[A-Za-z0-9\-_]+$/)) return 'gemini';
+                return null;
+            }
+
+            async sendChatbotQuery() {
+                const input = document.getElementById('chatbot-user-input');
+                const query = input.value.trim();
+                if (!query) return;
+                this.addMessage(query, 'user');
+                input.value = '';
+                this.addMessage('Thinking...', 'bot');
+
+                if (!this.apiKey) {
+                    this.addMessage('Please enter and save your API key first.', 'bot');
+                    return;
+                }
+
+                const provider = this.getApiProvider(this.apiKey);
+
+                // Session ID for chat memory
+                const sessionId = localStorage.getItem('graph_chatbot_session') ||
+                    (localStorage.setItem('graph_chatbot_session', crypto.randomUUID()), localStorage.getItem('graph_chatbot_session'));
+
+                // Only send context on first message in session
+                let context = "";
+                if (!this.contextSent) {
+                    context = this.getGraphContext();
+                    this.contextSent = true;
+                }
+
+                let reply = '';
+                try {
+                    const response = await fetch("http://localhost:8000/chat", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "X-Session-Id": sessionId
+                        },
+                        body: JSON.stringify({
+                            provider: provider,
+                            api_key: this.apiKey,
+                            query: query,
+                            context: context
+                        })
+                    });
+                    const data = await response.json();
+                    reply = data.reply || "No response from server.";
+                } catch (err) {
+                    reply = "Error contacting backend: " + err.message;
+                }
+
+                // Remove "Thinking..." and show reply
+                const botMsgs = this.messagesDiv.querySelectorAll('pre');
+                if (botMsgs.length > 0 && botMsgs[botMsgs.length - 1].textContent === 'Thinking...') {
+                    botMsgs[botMsgs.length - 1].remove();
+                }
+                this.addMessage(reply, 'bot');
+            }
+        }
+
+        // Initialize the chatbot after DOM is ready
+        window.addEventListener('DOMContentLoaded', () => {
+            window.graphChatbot = new GraphChatbot();
         });
     </script>
 </body>

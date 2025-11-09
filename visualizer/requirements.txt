@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+pydantic
+langchain-core
+langchain-openai
+langchain-google-genai

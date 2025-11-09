@@ -48,6 +48,14 @@ jobs:
           chmod -R 777 ${{ github.workspace }}/plots
           chmod -R 777 ${{ github.workspace }}/results
 
+      - name: Copy chatbot server files to plots
+        run: |
+          cp visualizer/requirements.txt ${{ github.workspace }}/plots/
+          cp visualizer/chatbot_server.py ${{ github.workspace }}/plots/
+          cp visualizer/run_server.sh ${{ github.workspace }}/plots/
+          cp visualizer/README.md ${{ github.workspace }}/plots/
+          chmod +x ${{ github.workspace }}/plots/run_server.sh
+
       - name: Check available processors and usage percentage
         id: cpu-check
         run: |
