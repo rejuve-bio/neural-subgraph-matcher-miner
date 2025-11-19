@@ -38,6 +38,19 @@ def parse_decoder(parser):
     # Memory efficiency parameters
     dec_parser.add_argument('--memory_efficient', action='store_true',
         help='Use memory efficient search for large graphs')
+    
+    # Streaming mode parameters  
+    dec_parser.add_argument('--use_streaming', action='store_true',  
+                        help='Force streaming mode for large graphs')  
+    dec_parser.add_argument('--auto_streaming_threshold', type=int, default=100000,  
+                        help='Auto-enable streaming for graphs larger than this')  
+    dec_parser.add_argument('--streaming_workers', type=int, default=4,  
+                        help='Number of parallel workers for chunk processing')  
+    dec_parser.add_argument('--dense_graph_threshold', type=float, default=5.0,  
+                        help='Average degree threshold for dense graphs')  
+    dec_parser.add_argument('--clustering_threshold', type=float, default=0.3,  
+                        help='Clustering coefficient threshold for modular graphs')
+    
     # Beam search parameter
     parser.add_argument('--beam_width', type=int, default=5,
                         help='Width of beam for beam search')
@@ -78,5 +91,10 @@ def parse_decoder(parser):
         search_strategy="greedy",
         out_batch_size=10,
         node_anchored=True,
-        memory_limit=1000000
+        memory_limit=1000000,
+        chunk_size=10000,  
+        auto_streaming_threshold=50000,  
+        streaming_workers=4,  
+        dense_graph_threshold=50.0,  
+        use_streaming=False
     )
