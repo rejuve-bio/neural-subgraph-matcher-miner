@@ -18,6 +18,8 @@ from common import combined_syn
 from common import feature_preprocess
 from common import utils
 
+
+
 from torch.utils.data import Dataset, DataLoader, DistributedSampler
 
 def load_dataset(name):
@@ -26,6 +28,7 @@ def load_dataset(name):
     Used as a helper for DiskDataSource.
     """
     task = "graph"
+    
     if name == "enzymes":
         dataset = TUDataset(root="/tmp/ENZYMES", name="ENZYMES")
     elif name == "proteins":
@@ -48,20 +51,42 @@ def load_dataset(name):
         dataset = QM9(root="/tmp/QM9")
     elif name == "atlas":
         dataset = [g for g in nx.graph_atlas_g()[1:] if nx.is_connected(g)]
-    if task == "graph":
-        train_len = int(0.8 * len(dataset))
-        train, test = [], []
-        dataset = list(dataset)
-        random.shuffle(dataset)
-        has_name = hasattr(dataset[0], "name")
-        for i, graph in tqdm(enumerate(dataset)):
-            if not type(graph) == nx.Graph:
-                if has_name: del graph.name
-                graph = pyg_utils.to_networkx(graph).to_undirected()
-            if i < train_len:
-                train.append(graph)
-            else:
-                test.append(graph)
+    elif name == "cisco":
+        graphs = []
+        data_dir = "data/cisco"  # Folder where you'll unzip the dataset
+        for filename in os.listdir(data_dir):
+            if filename.endswith(".txt") or filename.endswith(".edges"):
+                filepath = os.path.join(data_dir, filename)
+                # Directed graph with weights
+                G = nx.read_edgelist(
+                    filepath,
+                    create_using=nx.DiGraph(),
+                    data=(("weight", float),)
+                )
+                graphs.append(G)
+        # Shuffle and split 80/20
+        random.shuffle(graphs)
+        train_len = int(0.8 * len(graphs))
+        train = graphs[:train_len]
+        test = graphs[train_len:]
+        return train, test, task  # return immediately for Cisco
+    
+    # For PyG / atlas datasets
+    train_len = int(0.8 * len(dataset))
+    train, test = [], []
+    dataset = list(dataset)
+    random.shuffle(dataset)
+    has_name = hasattr(dataset[0], "name")
+    for i, graph in tqdm(enumerate(dataset)):
+        if not isinstance(graph, nx.Graph):
+            if has_name:
+                del graph.name
+            graph = pyg_utils.to_networkx(graph).to_undirected()
+        if i < train_len:
+            train.append(graph)
+        else:
+            test.append(graph)
+    
     return train, test, task
 
 
