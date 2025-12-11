@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SPMiner Motif Analysis Report - Web-Google Graph (Dynamic Load)</title>
+    <script type="text/javascript" src="https://unpkg.com/vis-network@9.1.2/dist/vis-network.min.js"></script>
+    <style type="text/css">
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            max-width: 1000px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+        .motif-section {
+            margin-bottom: 30px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #fafafa;
+        }
+        .motif-section h2 {
+            color: #555;
+            margin-top: 0;
+        }
+        .network-container {
+            width: 100%;
+            height: 300px;
+            border: 1px solid #ccc;
+            background-color: #fff;
+            margin-top: 10px;
+        }
+        .legend {
+            margin-top: 15px;
+            padding: 10px;
+            border: 1px dashed #ccc;
+            font-size: 0.9em;
+        }
+        .loading {
+            color: #1e88e5;
+            text-align: center;
+        }
+        .error {
+            color: #d32f2f;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>SPMiner Extracted Motifs (k=3)</h1>
+    <p>Analysis of the 3 most frequent directed 3-node patterns found in the sampled Web-Google graph. Data loaded dynamically from <code>results_2/out-patterns.json</code>.</p>
+    
+    <div id="motifs-container" class="loading">
+        Loading motif data... Please ensure the local server is running.
+    </div>
+    
+    <div class="legend">
+        <h3>Legend</h3>
+        <ul>
+            <li>**Node:** Represents a Web Page (document).</li>
+            <li>**Edge (Arrow):** Represents a Hyperlink (A → B means Page A links to Page B).</li>
+            <li>**Anchor:** Anchor nodes are starting points or critical nodes (marked in **Dark Orange**).</li>
+        </ul>
+    </div>
+</div>
+
+<script type="text/javascript">
+    const JSON_PATH = 'results/out-patterns.json';
+    const container = document.getElementById('motifs-container');
+
+    // --- 1. Fetch JSON Data ---
+    fetch(JSON_PATH)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Failed to load JSON: ${response.status} ${response.statusText}. Check file path.`);
+            }
+            return response.json();
+        })
+        .then(motifsData => {
+            container.classList.remove('loading');
+            container.innerHTML = ''; // Clear loading message
+            motifsData.forEach((motif, index) => {
+                drawMotif(motif, index);
+            });
+        })
+        .catch(error => {
+            container.classList.add('error');
+            container.innerHTML = `Error loading data: ${error.message}<br>Check the file path <code>${JSON_PATH}</code> and ensure the local server is running.`;
+            console.error('Data Loading Error:', error);
+        });
+
+    // --- 2. Visualization and Rendering Logic ---
+
+    function getInterpretation(index, edges) {
+        if (index === 0 && edges === 6) {
+            return 'This is a **Fully Connected Directed Clique** (Bidirectional Triangle). All three pages mutually link to each other. **Interpretation:** Represents a tight community or strong mutual endorsement.';
+        } else if (index === 1 && edges === 2) {
+            return 'This is a simple **Directed Path/Chain**. A simple flow of authority or citation is implied, often seen in influencer/reference structures.';
+        } else if (index === 2 && edges === 3) {
+             return 'This is a **Triangle with one Path/Cycle**. A closed loop of influence or a complex citation loop where one page may influence two others but also receives an endorsement from one of them.';
+        }
+        return 'General 3-node structure. See diagram for details.';
+    }
+
+    function drawMotif(motif, index) {
+        const id = `network-motif-${index}`;
+        
+        // Prepare Nodes
+        const nodes = motif.nodes.map((n, i) => ({
+            id: n.id,
+            label: n.id, // <--- UPDATED: Using the node ID as the visible label
+            title: `Original ID: ${n.id}\nAnchor: ${n.anchor === 1 ? 'Yes' : 'No'}`,
+            color: n.anchor === 1 ? { background: '#FF8C00', border: '#B85C00' } : { background: '#6AA84F', border: '#38761D' },
+            font: { color: 'white' }
+        }));
+
+        // Prepare Edges
+        const edges = motif.edges.map(e => ({
+            from: e.source,
+            to: e.target,
+            arrows: 'to', // Directed graph
+            color: { color: '#888' },
+            width: 2
+        }));
+
+        const data = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
+        
+        // Create HTML Structure
+        const section = document.createElement('div');
+        section.className = 'motif-section';
+        
+        const interpretation = getInterpretation(index, motif.metadata.num_edges);
+
+        section.innerHTML = `
+            <h2>Motif ${index + 1}: ${motif.metadata.num_edges} Edges</h2>
+            <p><strong>Structural Summary:</strong> ${interpretation}</p>
+            <div id="${id}" class="network-container"></div>
+        `;
+        container.appendChild(section);
+
+        // Draw Network
+        const options = {
+            edges: { smooth: true },
+            // Keeping original layout settings, but visibility may be slightly cluttered with long IDs.
+            physics: { enabled: true, stabilization: { iterations: 100 } },
+            layout: { randomSeed: index }
+        };
+
+        new vis.Network(document.getElementById(id), data, options);
+    }
+</script>
+
+</body>
+</html>

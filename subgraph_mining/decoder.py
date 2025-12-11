@@ -681,7 +681,7 @@ def pattern_growth(dataset, task, args):
     start_time = time.time()
     
     ensure_directories()
-    
+    agent = None
     # Load model
     if args.method_type == "end2end":
         model = models.End2EndOrder(1, args.hidden_dim, args)
@@ -980,6 +980,28 @@ def main():
     parse_decoder(parser)
     
     args = parser.parse_args()
+
+    dataset = None  # Initialize dataset to avoid UnboundLocalError
+    task = args.graph_type 
+
+    # PATCH START: Force load custom graph if path is provided 
+    if args.graph_pkl_path:
+        logger.info(f"Loading custom graph from: {args.graph_pkl_path}")
+        try:
+            with open(args.graph_pkl_path, 'rb') as f:
+                data_dict = pickle.load(f)
+            
+            # Assume the custom file contains a 'graph' key holding the NetworkX graph
+            graph_list = [data_dict['graph']]
+            dataset = graph_list
+            task = "graph" # Default task for custom graph
+
+            logger.info(f"Successfully loaded custom graph: {dataset[0].number_of_nodes()} nodes, {dataset[0].number_of_edges()} edges.")
+            
+        except Exception as e:
+            logger.error(f"FATAL ERROR loading custom graph from {args.graph_pkl_path}: {e}")
+            sys.exit(1)
+    #PATCH END
 
     logger.info(f"Using dataset: {args.dataset}")
     logger.info(f"Graph type: {args.graph_type}")
