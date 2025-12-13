@@ -4,10 +4,10 @@ Configuration and constants
 import os
 from pathlib import Path
 
-# Get the ABSOLUTE path to the project root
+
 PROJECT_ROOT = Path(__file__).parent.parent.absolute()
 
-# Load .env from PROJECT ROOT (where you run streamlit from)
+
 try:
     from dotenv import load_dotenv
     # Load from project root
