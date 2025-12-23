@@ -1,8 +1,13 @@
+import os
+from dotenv import load_dotenv
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .api.routes import router as api_router
 from .api.chat_routes import router as chat_router
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = FastAPI(title="Neural Miner API")
 

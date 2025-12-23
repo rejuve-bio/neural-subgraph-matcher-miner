@@ -76,17 +76,31 @@ Detailed library requirements can be found in requirements.txt
 
 To use the LLM-powered interpreter:
 
-1. **Export API Key**:
+1. **Configure Environment Variables**:
    ```bash
-   export GEMINI_API_KEY="YOUR_KEY_HERE"
+   # Copy the example environment file
+   cp .env.example .env
+   
+   # Edit .env and add your Gemini API key
+   # Get your API key from: https://makersuite.google.com/app/apikey
+   ```
+   
+   Your `.env` file should contain:
+   ```
+   GEMINI_API_KEY=your_actual_api_key_here
    ```
 
-2. **Start Backend**:
+2. **Install Dependencies** (if not already installed):
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Start Backend**:
    ```bash
    python3 -m app.main
    ```
 
-3. **Open Visualizer**:
+4. **Open Visualizer**:
    Open the generated motif interpreter HTML file in your browser to start the interpreter.
 
 
