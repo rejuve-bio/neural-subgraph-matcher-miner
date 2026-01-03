@@ -7,7 +7,7 @@ from ..config.settings import Config
 
 class MiningService:
     @staticmethod
-    def run_miner(input_file_path, job_id=None, **kwargs):
+    def run_miner(input_file_path, job_id=None, config=None):
         """
         Runs the subgraph miner on the given input file.
         Returns the parsed JSON results and file paths.
@@ -17,6 +17,12 @@ class MiningService:
         
         shared_job_dir = "/shared/output/{}".format(job_id)
         os.makedirs(shared_job_dir, exist_ok=True)
+        
+        # Clean plots directory to prevent old results from mixing with new ones
+        plots_cluster_dir = "/app/plots/cluster"
+        if os.path.exists(plots_cluster_dir):
+            shutil.rmtree(plots_cluster_dir)
+        os.makedirs(plots_cluster_dir, exist_ok=True)
         
         out_filename = str(uuid.uuid4()) + '.pkl'
         out_path = os.path.join(Config.RESULTS_FOLDER, out_filename)
@@ -33,25 +39,43 @@ class MiningService:
                 "--dataset={}".format(input_file_path),
                 "--out_path={}".format(out_path)
             ]
-            
-            # Map kwargs to command arguments
-            if 'n_trials' in kwargs:
-                cmd.append("--n_trials={}".format(kwargs['n_trials']))
-            
-            if 'min_pattern_size' in kwargs:
-                cmd.append("--min_pattern_size={}".format(kwargs['min_pattern_size']))
+
+            if config:
+                if config.get('n_trials'):
+                    cmd.append("--n_trials={}".format(config['n_trials']))
                 
-            if 'max_pattern_size' in kwargs:
-                cmd.append("--max_pattern_size={}".format(kwargs['max_pattern_size']))
-            
-            if 'graph_type' in kwargs:
-                cmd.append("--graph_type={}".format(kwargs['graph_type']))
+                if config.get('min_pattern_size'):
+                    cmd.append("--min_pattern_size={}".format(config['min_pattern_size']))
+                    
+                if config.get('max_pattern_size'):
+                    cmd.append("--max_pattern_size={}".format(config['max_pattern_size']))
+
+                if config.get('min_neighborhood_size'):
+                    cmd.append("--min_neighborhood_size={}".format(config['min_neighborhood_size']))
+                    
+                if config.get('max_neighborhood_size'):
+                    cmd.append("--max_neighborhood_size={}".format(config['max_neighborhood_size']))
+                    
+                if config.get('n_neighborhoods'):
+                    cmd.append("--n_neighborhoods={}".format(config['n_neighborhoods']))
                 
-            if kwargs.get('node_anchored', True): # Default to true as it seems common
+                if config.get('graph_type'):
+                    cmd.append("--graph_type={}".format(config['graph_type']))
+                    
+                if config.get('radius'):
+                    cmd.append("--radius={}".format(config['radius']))
+                    
+                if config.get('search_strategy'):
+                    cmd.append("--search_strategy={}".format(config['search_strategy']))
+                    
+                if config.get('sample_method'):
+                    cmd.append("--sample_method={}".format(config['sample_method']))
+                    
+                # Default to true as it seems common
                 cmd.append("--node_anchored")
-                
-            if kwargs.get('visualize_instances', False):
-                cmd.append("--visualize_instances")
+                    
+                if config.get('visualize_instances', False):
+                    cmd.append("--visualize_instances")
             
             print("Running command: {}".format(' '.join(cmd)), flush=True)
             print("Mining started - this may take several minutes...", flush=True)
@@ -72,10 +96,68 @@ class MiningService:
             )
             
             # Stream output line by line
-            for line in process.stdout:
-                print(line.rstrip(), flush=True)
+            total_chunks = 1
+            current_chunk = 0
             
+            progress_file = os.path.join(shared_job_dir, "progress.json")
+            
+            def update_progress(status, progress, message):
+                with open(progress_file, 'w') as f:
+                    json.dump({
+                        "status": status,
+                        "progress": min(progress, 99), # Never hit 100 until fully done
+                        "message": message
+                    }, f)
+
+            # Initialize progress
+            update_progress("starting", 0, "Initializing miner...")
+
+            for line in process.stdout:
+                line_str = line.rstrip()
+                print(line_str, flush=True)
+                
+                try:
+                    # Robust parsing that ignores timestamp prefixes
+                    # Example: "[10:00:00] Worker PID 123 finished chunk 1/4"
+                    
+                    if "started chunk" in line_str:
+                         # "... started chunk 1/4"
+                        parts = line_str.split("started chunk")[1].strip().split(" ")[0] # "1/4"
+                        current, total = map(int, parts.split("/"))
+                        total_chunks = total
+                        current_chunk = current
+                        
+                        # Start of a chunk is roughly (chunk-1)/total
+                        base_progress = int(((current_chunk - 1) / total_chunks) * 90)
+                        update_progress("mining", base_progress, f"Started processing chunk {current_chunk} of {total_chunks}...")
+
+                    elif "still processing chunk" in line_str:
+                        # Bump progress slightly to show activity
+                        # "... still processing chunk 1/4"
+                        parts = line_str.split("still processing chunk")[1].strip().split(" ")[0]
+                        current, total = map(int, parts.split("/"))
+                        
+                        base_progress = int(((current_chunk - 1) / total_chunks) * 90)
+                        active_progress = base_progress + int((1 / total_chunks) * 45) # Halfway through chunk
+                        update_progress("mining", active_progress, f"Still processing chunk {current_chunk} of {total_chunks}...")
+
+                    elif "finished chunk" in line_str:
+                        # "... finished chunk 1/4"
+                        parts = line_str.split("finished chunk")[1].strip().split(" ")[0]
+                        current, total = map(int, parts.split("/"))
+                        
+                        # End of chunk is current/total
+                        completed_progress = int((current_chunk / total_chunks) * 90)
+                        update_progress("mining", completed_progress, f"Finished chunk {current_chunk} of {total_chunks}")
+                        
+                except Exception as e:
+                    # Don't let parsing errors stop the stream
+                    print(f"Warning: Failed to parse progress line: {e}", flush=True)
+
             process.wait()
+            
+            # Final completion update
+            update_progress("completed", 100, "Mining completed successfully!")
             
             if process.returncode != 0:
                 raise Exception("Miner failed with exit code {}".format(process.returncode))
@@ -108,38 +190,13 @@ class MiningService:
             if os.path.exists(json_path):
                 # Copy to shared results for download
                 shutil.copy(json_path, os.path.join(shared_results_dir, "patterns.json"))
-                # Copy to persistent results for latest job context (fixed name)
-                shutil.copy(json_path, os.path.join(persistent_results_dir, "patterns.json"))
             
-            # 2. Handle Instance Results (CRITICAL for LLM)
-            if os.path.exists(instance_json_path):
-                # Copy to shared results for download
-                shutil.copy(instance_json_path, os.path.join(shared_results_dir, "patterns_all_instances.json"))
-                # Copy to persistent results root for LLM context (fixed name)
-                shutil.copy(instance_json_path, os.path.join(persistent_results_dir, "patterns_all_instances.json"))
-                
-            if os.path.exists(instance_pkl_path):
-                # Copy to shared results for download
-                shutil.copy(instance_pkl_path, os.path.join(shared_results_dir, "patterns_all_instances.pkl"))
-                # Copy to persistent results root (fixed name)
-                shutil.copy(instance_pkl_path, os.path.join(persistent_results_dir, "patterns_all_instances.pkl"))
-
-            # 3. Handle Plots (Copy to shared volume for download)
-            if os.path.exists(persistent_plots_dir):
-                print("Syncing plots to shared volume for download...", flush=True)
-                for item in os.listdir(persistent_plots_dir):
-                    s = os.path.join(persistent_plots_dir, item)
-                    d = os.path.join(shared_plots_dir, item)
-                    if os.path.isdir(s):
-                        if os.path.exists(d):
-                            shutil.rmtree(d)
-                        shutil.copytree(s, d)
-                    else:
-                        shutil.copy2(s, d)
-
-            print("✓ Mining results saved to shared volume: {}".format(shared_job_dir), flush=True)
-            print("✓ Mining results persisted to submodule results/: {}".format(persistent_results_dir), flush=True)
-            print("✓ Mining plots persisted to submodule plots/: {}".format(persistent_plots_dir), flush=True)
+            plots_cluster_dir = "/app/plots/cluster"
+            if os.path.exists(plots_cluster_dir):
+                for filename in os.listdir(plots_cluster_dir):
+                    src_file = os.path.join(plots_cluster_dir, filename)
+                    if os.path.isfile(src_file):
+                        shutil.copy(src_file, os.path.join(shared_plots_dir, filename))
             
             print("Results saved to shared volume: {}".format(shared_job_dir), flush=True)
             
