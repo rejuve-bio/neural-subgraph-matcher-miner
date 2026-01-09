@@ -61,7 +61,8 @@ RUN pip install --no-cache-dir \
     deepsnap==0.1.2 \
     networkx==2.4 \
     test-tube==0.7.5 \
-    tqdm==4.43.0
+    tqdm==4.43.0 \
+    requests
 
 # Install FastAPI and related packages
 RUN pip install --no-cache-dir \

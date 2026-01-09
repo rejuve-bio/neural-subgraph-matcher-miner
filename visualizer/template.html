@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,33 +9,92 @@
     <title>Interactive Graph Visualizer</title>
     <style>
         :root {
-            /* Color Palette - Light Theme */
-            --bg-primary: #fafafa;
-            --bg-secondary: rgba(255, 255, 255, 0.9);
-            --border-light: rgba(0, 0, 0, 0.1);
-            --text-primary: #374151;
-            --text-secondary: #6b7280;
-            
+            /* Color Palette - Light Theme (matching annotation tool) */
+            --bg-primary: oklch(0.96 0 0);
+            --bg-secondary: oklch(0.97 0 0);
+            --border-light: oklch(0.86 0 0);
+            --text-primary: oklch(0.32 0 0);
+            --text-secondary: oklch(0.51 0 0);
+
+            /* Card Elements */
+            --card-bg: oklch(0.97 0 0);
+            --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --card-border: oklch(0.86 0 0);
+
+            /* UI Components */
+            --primary: oklch(0.21 0.006 285.885);
+            --primary-foreground: oklch(0.985 0 0);
+            --secondary: oklch(0.91 0 0);
+            --secondary-foreground: oklch(0.32 0 0);
+            --muted: oklch(0.89 0 0);
+            --muted-foreground: oklch(0.51 0 0);
+            --accent: oklch(0.81 0 0);
+            --accent-foreground: oklch(0.32 0 0);
+
             /* Node Colors */
             --node-default: rgba(59, 130, 246, 0.7);
             --node-anchor: rgba(239, 68, 68, 0.8);
             --node-border: rgba(0, 0, 0, 0.3);
-            
+
             /* Edge Colors */
             --edge-default: rgba(107, 114, 128, 0.6);
             --edge-hover: rgba(59, 130, 246, 0.8);
-            
-            /* UI Elements */
-            --card-bg: rgba(255, 255, 255, 0.95);
-            --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            --card-border: rgba(0, 0, 0, 0.1);
-            
+
             /* Grid Colors */
             --grid-minor: rgba(0, 0, 0, 0.03);
             --grid-major: rgba(0, 0, 0, 0.08);
             --grid-axis: rgba(59, 130, 246, 0.15);
             --grid-dots: rgba(0, 0, 0, 0.1);
             --grid-center: rgba(59, 130, 246, 0.2);
+
+            /* Button Colors */
+            --button-bg: white;
+            --button-hover: oklch(0.96 0 0);
+        }
+
+        /* Dark Theme (matching annotation tool) */
+        .dark {
+            /* Color Palette - Dark Theme */
+            --bg-primary: oklch(0.22 0 0);
+            --bg-secondary: oklch(0.24 0 0);
+            --border-light: oklch(0.33 0 0);
+            --text-primary: oklch(0.89 0 0);
+            --text-secondary: oklch(0.6 0 0);
+
+            /* Card Elements */
+            --card-bg: oklch(0.24 0 0);
+            --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+            --card-border: oklch(0.33 0 0);
+
+            /* UI Components */
+            --primary: oklch(0.92 0.004 286.32);
+            --primary-foreground: oklch(0.21 0.006 285.885);
+            --secondary: oklch(0.31 0 0);
+            --secondary-foreground: oklch(0.89 0 0);
+            --muted: oklch(0.29 0 0);
+            --muted-foreground: oklch(0.6 0 0);
+            --accent: oklch(0.37 0 0);
+            --accent-foreground: oklch(0.89 0 0);
+
+            /* Node Colors - Enhanced for dark mode */
+            --node-default: rgba(96, 165, 250, 0.8);
+            --node-anchor: rgba(248, 113, 113, 0.9);
+            --node-border: rgba(255, 255, 255, 0.4);
+
+            /* Edge Colors - Enhanced for dark mode */
+            --edge-default: rgba(156, 163, 175, 0.7);
+            --edge-hover: rgba(96, 165, 250, 0.9);
+
+            /* Grid Colors - Dark mode */
+            --grid-minor: rgba(255, 255, 255, 0.03);
+            --grid-major: rgba(255, 255, 255, 0.08);
+            --grid-axis: rgba(96, 165, 250, 0.2);
+            --grid-dots: rgba(255, 255, 255, 0.1);
+            --grid-center: rgba(96, 165, 250, 0.25);
+
+            /* Button Colors */
+            --button-bg: oklch(0.31 0 0);
+            --button-hover: oklch(0.37 0 0);
         }
 
         * {
@@ -65,8 +125,8 @@
             left: 0;
             cursor: grab;
             background-color: var(--bg-primary);
-            background-image: 
-                radial-gradient(circle at 1px 1px, rgba(0,0,0,0.02) 1px, transparent 0);
+            background-image:
+                radial-gradient(circle at 1px 1px, rgba(0, 0, 0, 0.02) 1px, transparent 0);
             background-size: 20px 20px;
         }
 
@@ -82,7 +142,8 @@
             width: 100%;
             height: 100%;
             pointer-events: none;
-            display: none; /* Grid is now drawn on canvas for proper transformation */
+            display: none;
+            /* Grid is now drawn on canvas for proper transformation */
         }
 
         /* Base UI card styling */
@@ -153,7 +214,7 @@
             height: 36px;
             border: 1px solid var(--border-light);
             border-radius: 6px;
-            background: white;
+            background: var(--button-bg);
             color: var(--text-primary);
             cursor: pointer;
             font-size: 18px;
@@ -165,12 +226,17 @@
         }
 
         #zoom-controls button:hover {
-            background: var(--bg-primary);
+            background: var(--button-hover);
             border-color: var(--text-secondary);
         }
 
         #zoom-controls button:active {
             transform: scale(0.95);
+        }
+
+        /* Theme toggle button styling */
+        #theme-toggle {
+            font-size: 20px;
         }
 
         /* Legend card styling */
@@ -283,7 +349,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: #ccc;
+            background-color: var(--muted);
             transition: 0.3s;
             border-radius: 24px;
         }
@@ -295,16 +361,16 @@
             width: 18px;
             left: 3px;
             bottom: 3px;
-            background-color: white;
+            background-color: var(--button-bg);
             transition: 0.3s;
             border-radius: 50%;
         }
 
-        input:checked + .toggle-slider {
+        input:checked+.toggle-slider {
             background-color: var(--node-default);
         }
 
-        input:checked + .toggle-slider:before {
+        input:checked+.toggle-slider:before {
             transform: translateX(20px);
         }
 
@@ -318,7 +384,7 @@
             padding: 8px 12px;
             border: 1px solid var(--border-light);
             border-radius: 4px;
-            background: white;
+            background: var(--button-bg);
             color: var(--text-primary);
             cursor: pointer;
             font-size: 12px;
@@ -326,7 +392,7 @@
         }
 
         .export-buttons button:hover {
-            background: var(--bg-primary);
+            background: var(--button-hover);
             border-color: var(--text-secondary);
         }
 
@@ -376,41 +442,43 @@
                 padding: 8px;
                 font-size: 12px;
             }
-            
-            .top-left, .top-right {
+
+            .top-left,
+            .top-right {
                 top: 10px;
             }
-            
+
             .top-left {
                 left: 10px;
             }
-            
+
             .top-right {
                 right: 10px;
             }
-            
+
             .bottom-right-upper {
                 bottom: 140px;
                 right: 10px;
             }
-            
+
             .bottom-right-lower {
                 bottom: 10px;
                 right: 10px;
             }
-            
+
             #title-bar {
                 min-width: 200px;
                 font-size: 14px;
             }
-            
+
             #zoom-controls button {
                 width: 32px;
                 height: 32px;
                 font-size: 16px;
             }
-            
-            #legend-card, #controls-card {
+
+            #legend-card,
+            #controls-card {
                 min-width: 160px;
             }
         }
@@ -420,46 +488,294 @@
                 padding: 6px;
                 font-size: 11px;
             }
-            
+
             #title-bar {
                 min-width: 150px;
                 font-size: 12px;
             }
-            
+
             #zoom-controls button {
                 width: 28px;
                 height: 28px;
                 font-size: 14px;
             }
-            
-            #legend-card, #controls-card {
+
+            #legend-card,
+            #controls-card {
                 min-width: 140px;
+            }
+        }
+
+        /* Chatbot Interface Styling */
+        .bottom-right-upper {
+            position: absolute;
+            bottom: 260px;
+            right: 20px;
+            z-index: 1000;
+        }
+
+        #chat-widget {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        #api-key-container {
+            padding: 8px 16px;
+            background: var(--secondary);
+            border-bottom: 1px solid var(--border-light);
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        #api-key-input {
+            flex: 1;
+            padding: 6px 10px;
+            border: 1px solid var(--border-light);
+            border-radius: 4px;
+            font-size: 12px;
+            outline: none;
+            background: var(--button-bg);
+            color: var(--text-primary);
+        }
+
+        #api-key-input:focus {
+            border-color: var(--primary);
+        }
+
+        #chat-toggle-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+            color: white;
+            border: none;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-size: 24px;
+        }
+
+        #chat-toggle-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        #chat-window {
+            width: 350px;
+            height: 500px;
+            background: var(--card-bg);
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            margin-bottom: 20px;
+            transform-origin: bottom left;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid var(--border-light);
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(0.9) translateY(20px);
+            position: absolute;
+            bottom: 60px;
+            left: 0;
+        }
+
+        #chat-window.visible {
+            opacity: 1;
+            pointer-events: all;
+            transform: scale(1) translateY(0);
+        }
+
+        .chat-header {
+            background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+            padding: 16px;
+            color: white;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-close {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 18px;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+
+        .chat-close:hover {
+            opacity: 1;
+        }
+
+        .chat-messages {
+            flex: 1;
+            padding: 16px;
+            overflow-y: auto;
+            background: var(--bg-secondary);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .message {
+            max-width: 85%;
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-size: 14px;
+            line-height: 1.5;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            background: var(--primary);
+            color: var(--primary-foreground);
+            align-self: flex-end;
+            border-bottom-right-radius: 2px;
+        }
+
+        .message.bot {
+            background: var(--card-bg);
+            border: 1px solid var(--border-light);
+            color: var(--text-primary);
+            align-self: flex-start;
+            border-bottom-left-radius: 2px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+        }
+
+        .chat-input-area {
+            padding: 12px;
+            background: var(--card-bg);
+            border-top: 1px solid var(--border-light);
+            display: flex;
+            gap: 8px;
+        }
+
+        #chat-input {
+            flex: 1;
+            border: 1px solid var(--border-light);
+            border-radius: 20px;
+            padding: 10px 16px;
+            outline: none;
+            font-size: 14px;
+            transition: border-color 0.2s;
+            background: var(--button-bg);
+            color: var(--text-primary);
+        }
+
+        #chat-input:focus {
+            border-color: var(--primary);
+        }
+
+        #chat-send {
+            background: var(--primary);
+            color: var(--primary-foreground);
+            border: none;
+            border-radius: 50%;
+            width: 38px;
+            height: 38px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+
+        #chat-send:hover {
+            background: var(--primary);
+            opacity: 0.9;
+        }
+
+        #chat-send:disabled {
+            background: var(--muted);
+            cursor: not-allowed;
+        }
+
+        .typing-indicator {
+            display: flex;
+            gap: 4px;
+            padding: 4px 8px;
+        }
+
+        .typing-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--muted-foreground);
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+
+        .typing-dot:nth-child(1) {
+            animation-delay: -0.32s;
+        }
+
+        .typing-dot:nth-child(2) {
+            animation-delay: -0.16s;
+        }
+
+        @keyframes bounce {
+
+            0%,
+            80%,
+            100% {
+                transform: scale(0);
+            }
+
+            40% {
+                transform: scale(1);
             }
         }
     </style>
 </head>
+
 <body>
     <!-- Full-screen canvas container -->
     <div id="canvas-container">
         <canvas id="graph-canvas"></canvas>
         <div id="grid-overlay"></div>
     </div>
-    
+
     <!-- Floating UI Components -->
-    
+
     <!-- Title bar at center-top -->
     <div id="title-bar" class="ui-card top-center">
         <div id="graph-title">Graph Visualization</div>
         <div class="subtitle" id="graph-stats">Loading...</div>
     </div>
-    
+
     <!-- Zoom controls in top-right corner -->
     <div id="zoom-controls" class="ui-card top-right">
         <button id="zoom-in" title="Zoom In">+</button>
         <button id="zoom-out" title="Zoom Out">−</button>
         <button id="recenter" title="Recenter">⌂</button>
+        <button id="theme-toggle" title="Toggle Dark/Light Mode">☀️</button>
     </div>
-    
+
     <!-- Legend card in bottom-right area (upper) -->
     <div id="legend-card" class="ui-card bottom-right-upper">
         <h3>Legend</h3>
@@ -467,7 +783,7 @@
             <!-- Legend items will be populated by JavaScript -->
         </div>
     </div>
-    
+
     <!-- Controls card in bottom-right area (lower) -->
     <div id="controls-card" class="ui-card bottom-right-lower">
         <div class="control-group">
@@ -477,7 +793,15 @@
                 <span class="toggle-slider"></span>
             </label>
         </div>
-        
+
+        <div class="control-group">
+            <label>Navigation</label>
+            <div class="export-buttons">
+                <button onclick="window.open('http://localhost:3000/import', '_blank')">Upload</button>
+                <button onclick="window.open('http://localhost:3000', '_blank')">Annotation</button>
+            </div>
+        </div>
+
         <div class="control-group">
             <label>Export</label>
             <div class="export-buttons">
@@ -486,7 +810,7 @@
             </div>
         </div>
     </div>
-    
+
     <!-- Context Menu -->
     <div id="context-menu" class="hidden">
         <div class="context-menu-item" id="isolate-node">Isolate</div>
@@ -494,230 +818,407 @@
         <div class="context-menu-item" id="cancel-isolate" style="display: none;">Cancel Isolate</div>
     </div>
 
+    <!-- Chat Widget -->
+    <div id="chat-widget">
+        <div id="chat-window">
+            <div class="chat-header">
+                <span>Pattern Analyser</span>
+                <button class="chat-close" onclick="toggleChat()">×</button>
+            </div>
+            <div id="api-key-container">
+                <input type="password" id="api-key-input" placeholder="Enter Gemini API Key" onchange="saveApiKey()">
+            </div>
+            <div class="chat-messages" id="chat-messages">
+                <div class="message bot">
+                    Hello! I'm your Pattern Analyst. I can help you understand the topological structure of this motif.
+                    Ask me anything!
+                </div>
+            </div>
+            <div class="chat-input-area">
+                <input type="text" id="chat-input" placeholder="Ask about this pattern..."
+                    onkeypress="handleKeyPress(event)">
+                <button id="chat-send" onclick="sendMessage()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <button id="chat-toggle-btn" onclick="toggleChat()">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+        </button>
+    </div>
+
     <script>
+        // Chat Logic
+        function toggleChat() {
+            const window = document.getElementById('chat-window');
+            window.classList.toggle('visible');
+            if (window.classList.contains('visible')) {
+                document.getElementById('chat-input').focus();
+            }
+            loadApiKey();
+        }
+
+        function saveApiKey() {
+            const key = document.getElementById('api-key-input').value;
+            localStorage.setItem('gemini_api_key', key);
+        }
+
+        function loadApiKey() {
+            const key = localStorage.getItem('gemini_api_key');
+            if (key) {
+                document.getElementById('api-key-input').value = key;
+            }
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+            const sendBtn = document.getElementById('chat-send');
+            const apiKeyInput = document.getElementById('api-key-input');
+            const apiKey = apiKeyInput.value.trim();
+            const messagesContainer = document.getElementById('chat-messages');
+
+            if (!message) return;
+
+            // Disable input and button
+            input.disabled = true;
+            sendBtn.disabled = true;
+            input.value = '';
+
+            // Add user message
+            addMessage(message, 'user');
+
+            // Add typing indicator
+            const typingId = addTypingIndicator();
+            scrollToBottom();
+
+            try {
+                // Get pattern key if available
+                const patternKey = (typeof GRAPH_DATA !== 'undefined' && GRAPH_DATA.metadata && GRAPH_DATA.metadata.pattern_key) ? GRAPH_DATA.metadata.pattern_key : null;
+                const graphDataPayload = (typeof GRAPH_DATA !== 'undefined') ? GRAPH_DATA : {};
+
+                const payload = {
+                    graph_data: graphDataPayload,
+                    query: message,
+                    pattern_key: patternKey,
+                    api_key: apiKey
+                };
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                // Remove typing indicator
+                removeMessage(typingId);
+
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+
+                const data = await response.json();
+
+                // Format response (simple markdown to HTML conversion)
+                const formattedResponse = formatBotResponse(data.response);
+                addMessage(formattedResponse, 'bot', true);
+
+            } catch (error) {
+                console.error('Chat Error:', error);
+                removeMessage(typingId);
+                addMessage("I apologize, but I encountered an error connecting to the analysis server. Please ensure the backend is running.", 'bot');
+            } finally {
+                // Re-enable input
+                input.disabled = false;
+                sendBtn.disabled = false;
+                input.focus();
+                scrollToBottom();
+            }
+        }
+
+        function addMessage(text, type, isHtml = false) {
+            const container = document.getElementById('chat-messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${type}`;
+
+            if (isHtml) {
+                msgDiv.innerHTML = text;
+            } else {
+                msgDiv.textContent = text;
+            }
+
+            container.appendChild(msgDiv);
+            return msgDiv.id = 'msg-' + Date.now();
+        }
+
+        function addTypingIndicator() {
+            const container = document.getElementById('chat-messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message bot';
+            msgDiv.innerHTML = '<div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>';
+            msgDiv.id = 'typing-' + Date.now();
+            container.appendChild(msgDiv);
+            return msgDiv.id;
+        }
+
+        function removeMessage(id) {
+            const el = document.getElementById(id);
+            if (el) el.remove();
+        }
+
+        function scrollToBottom() {
+            const container = document.getElementById('chat-messages');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function formatBotResponse(text) {
+            // Simple Markdown formatter
+            return text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/\n\n/g, '<br><br>')
+                .replace(/\n/g, '<br>')
+                .replace(/- (.*?)(<br>|$)/g, '• $1$2');
+        }
+        const apiUrl = 'http://localhost:9002/chat';
         // Sample 7-node directed graph data
         const GRAPH_DATA = {
-        "metadata": {
+            "metadata": {
                 "title": "Directed Graph with Anchors",
                 "nodeCount": 11,
                 "edgeCount": 10,
                 "isDirected": true,
                 "density": 0.091
-        },
-        "nodes": [
+            },
+            "nodes": [
                 {
-                        "id": "enst00000316891",
-                        "label": "transcript",
-                        "transcript_name": "TRIT1-201",
-                        "gene_name": "TRIT1",
-                        "anchor": false,
-                        "x": 27.65196752359671,
-                        "y": 197.0768524739416
+                    "id": "enst00000316891",
+                    "label": "transcript",
+                    "transcript_name": "TRIT1-201",
+                    "gene_name": "TRIT1",
+                    "anchor": false,
+                    "x": 27.65196752359671,
+                    "y": 197.0768524739416
                 },
                 {
-                        "id": "enst00000441669",
-                        "label": "transcript",
-                        "transcript_name": "TRIT1-203",
-                        "gene_name": "TRIT1",
-                        "anchor": false,
-                        "x": 198.15733023744193,
-                        "y": 37.6455322302267
+                    "id": "enst00000441669",
+                    "label": "transcript",
+                    "transcript_name": "TRIT1-203",
+                    "gene_name": "TRIT1",
+                    "anchor": false,
+                    "x": 198.15733023744193,
+                    "y": 37.6455322302267
                 },
                 {
-                        "id": "q9h3h1-1",
-                        "label": "protein",
-                        "protein_name": "MOD5",
-                        "isoform_name": "1",
-                        "anchor": false,
-                        "x": -95.0809692854939,
-                        "y": -177.28703171738803
+                    "id": "q9h3h1-1",
+                    "label": "protein",
+                    "protein_name": "MOD5",
+                    "isoform_name": "1",
+                    "anchor": false,
+                    "x": -95.0809692854939,
+                    "y": -177.28703171738803
                 },
                 {
-                        "id": "enst00000372818",
-                        "label": "transcript",
-                        "transcript_name": "TRIT1-202",
-                        "gene_name": "TRIT1",
-                        "anchor": false,
-                        "x": -166.60054744627251,
-                        "y": 98.79798083873025
+                    "id": "enst00000372818",
+                    "label": "transcript",
+                    "transcript_name": "TRIT1-202",
+                    "gene_name": "TRIT1",
+                    "anchor": false,
+                    "x": -166.60054744627251,
+                    "y": 98.79798083873025
                 },
                 {
-                        "id": "enst00000491865",
-                        "label": "transcript",
-                        "transcript_name": "TRIT1-211",
-                        "gene_name": "TRIT1",
-                        "anchor": false,
-                        "x": 134.0590518547878,
-                        "y": 137.61826291770697
+                    "id": "enst00000491865",
+                    "label": "transcript",
+                    "transcript_name": "TRIT1-211",
+                    "gene_name": "TRIT1",
+                    "anchor": false,
+                    "x": 134.0590518547878,
+                    "y": 137.61826291770697
                 },
                 {
-                        "id": "q9h3h1-4",
-                        "label": "protein",
-                        "protein_name": "MOD5",
-                        "isoform_name": "4",
-                        "anchor": false,
-                        "x": -93.3767504466559,
-                        "y": 183.95972216092807
+                    "id": "q9h3h1-4",
+                    "label": "protein",
+                    "protein_name": "MOD5",
+                    "isoform_name": "4",
+                    "anchor": false,
+                    "x": -93.3767504466559,
+                    "y": 183.95972216092807
                 },
                 {
-                        "id": "q9h3h1-5",
-                        "label": "protein",
-                        "protein_name": "MOD5",
-                        "isoform_name": "5",
-                        "anchor": false,
-                        "x": 200.0,
-                        "y": -83.77624813100846
+                    "id": "q9h3h1-5",
+                    "label": "protein",
+                    "protein_name": "MOD5",
+                    "isoform_name": "5",
+                    "anchor": false,
+                    "x": 200.0,
+                    "y": -83.77624813100846
                 },
                 {
-                        "id": "enst00000465417",
-                        "label": "transcript",
-                        "transcript_name": "TRIT1-206",
-                        "gene_name": "TRIT1",
-                        "anchor": false,
-                        "x": -151.2725718127031,
-                        "y": -93.40322484041486
+                    "id": "enst00000465417",
+                    "label": "transcript",
+                    "transcript_name": "TRIT1-206",
+                    "gene_name": "TRIT1",
+                    "anchor": false,
+                    "x": -151.2725718127031,
+                    "y": -93.40322484041486
                 },
                 {
-                        "id": "enst00000467774",
-                        "label": "transcript",
-                        "transcript_name": "TRIT1-207",
-                        "gene_name": "TRIT1",
-                        "anchor": false,
-                        "x": -166.33749633917537,
-                        "y": 4.219155404037533
+                    "id": "enst00000467774",
+                    "label": "transcript",
+                    "transcript_name": "TRIT1-207",
+                    "gene_name": "TRIT1",
+                    "anchor": false,
+                    "x": -166.33749633917537,
+                    "y": 4.219155404037533
                 },
                 {
-                        "id": "enst00000462243",
-                        "label": "transcript",
-                        "transcript_name": "TRIT1-204",
-                        "gene_name": "TRIT1",
-                        "anchor": false,
-                        "x": 18.033079069290444,
-                        "y": -188.57476352637613
+                    "id": "enst00000462243",
+                    "label": "transcript",
+                    "transcript_name": "TRIT1-204",
+                    "gene_name": "TRIT1",
+                    "anchor": false,
+                    "x": 18.033079069290444,
+                    "y": -188.57476352637613
                 },
                 {
-                        "id": "ensg00000043514",
-                        "label": "gene",
-                        "gene_name": "TRIT1",
-                        "anchor": true,
-                        "x": 94.7669066451839,
-                        "y": -116.27623781038359
+                    "id": "ensg00000043514",
+                    "label": "gene",
+                    "gene_name": "TRIT1",
+                    "anchor": true,
+                    "x": 94.7669066451839,
+                    "y": -116.27623781038359
                 }
-        ],
-        "edges": [
+            ],
+            "edges": [
                 {
-                        "label": "translates_to",
-                        "weight": 1.0,
-                        "source": "enst00000316891",
-                        "target": "q9h3h1-1",
-                        "directed": true,
-                        "direction": "enst00000316891 -> q9h3h1-1",
+                    "label": "translates_to",
+                    "weight": 1.0,
+                    "source": "enst00000316891",
+                    "target": "q9h3h1-1",
+                    "directed": true,
+                    "direction": "enst00000316891 -> q9h3h1-1",
                 },
                 {
-                        "label": "translates_to",
-                        "weight": 1.0,
-                        "source": "enst00000441669",
-                        "target": "q9h3h1-5",
-                        "directed": true,
-                        "direction": "enst00000441669 -> q9h3h1-5",
+                    "label": "translates_to",
+                    "weight": 1.0,
+                    "source": "enst00000441669",
+                    "target": "q9h3h1-5",
+                    "directed": true,
+                    "direction": "enst00000441669 -> q9h3h1-5",
                 },
                 {
-                        "label": "translates_to",
-                        "weight": 1.0,
-                        "source": "enst00000372818",
-                        "target": "q9h3h1-4",
-                        "directed": true,
-                        "direction": "enst00000372818 -> q9h3h1-4",
+                    "label": "translates_to",
+                    "weight": 1.0,
+                    "source": "enst00000372818",
+                    "target": "q9h3h1-4",
+                    "directed": true,
+                    "direction": "enst00000372818 -> q9h3h1-4",
                 },
                 {
-                        "label": "transcribed_to",
-                        "weight": 1.0,
-                        "source": "ensg00000043514",
-                        "target": "enst00000316891",
-                        "directed": true,
-                        "direction": "ensg00000043514 -> enst00000316891",
+                    "label": "transcribed_to",
+                    "weight": 1.0,
+                    "source": "ensg00000043514",
+                    "target": "enst00000316891",
+                    "directed": true,
+                    "direction": "ensg00000043514 -> enst00000316891",
                 },
                 {
-                        "label": "transcribed_to",
-                        "weight": 1.0,
-                        "source": "ensg00000043514",
-                        "target": "enst00000441669",
-                        "directed": true,
-                        "direction": "ensg00000043514 -> enst00000441669",
+                    "label": "transcribed_to",
+                    "weight": 1.0,
+                    "source": "ensg00000043514",
+                    "target": "enst00000441669",
+                    "directed": true,
+                    "direction": "ensg00000043514 -> enst00000441669",
                 },
                 {
-                        "label": "transcribed_to",
-                        "weight": 1.0,
-                        "source": "ensg00000043514",
-                        "target": "enst00000372818",
-                        "directed": true,
-                        "direction": "ensg00000043514 -> enst00000372818",
+                    "label": "transcribed_to",
+                    "weight": 1.0,
+                    "source": "ensg00000043514",
+                    "target": "enst00000372818",
+                    "directed": true,
+                    "direction": "ensg00000043514 -> enst00000372818",
                 },
                 {
-                        "label": "transcribed_to",
-                        "weight": 1.0,
-                        "source": "ensg00000043514",
-                        "target": "enst00000491865",
-                        "directed": true,
-                        "direction": "ensg00000043514 -> enst00000491865",
+                    "label": "transcribed_to",
+                    "weight": 1.0,
+                    "source": "ensg00000043514",
+                    "target": "enst00000491865",
+                    "directed": true,
+                    "direction": "ensg00000043514 -> enst00000491865",
                 },
                 {
-                        "label": "transcribed_to",
-                        "weight": 1.0,
-                        "source": "ensg00000043514",
-                        "target": "enst00000465417",
-                        "directed": true,
-                        "direction": "ensg00000043514 -> enst00000465417",
+                    "label": "transcribed_to",
+                    "weight": 1.0,
+                    "source": "ensg00000043514",
+                    "target": "enst00000465417",
+                    "directed": true,
+                    "direction": "ensg00000043514 -> enst00000465417",
                 },
                 {
-                        "label": "transcribed_to",
-                        "weight": 1.0,
-                        "source": "ensg00000043514",
-                        "target": "enst00000467774",
-                        "directed": true,
-                        "direction": "ensg00000043514 -> enst00000467774",
+                    "label": "transcribed_to",
+                    "weight": 1.0,
+                    "source": "ensg00000043514",
+                    "target": "enst00000467774",
+                    "directed": true,
+                    "direction": "ensg00000043514 -> enst00000467774",
                 },
                 {
-                        "label": "transcribed_to",
-                        "weight": 1.0,
-                        "source": "ensg00000043514",
-                        "target": "enst00000462243",
-                        "directed": true,
-                        "direction": "ensg00000043514 -> enst00000462243",
+                    "label": "transcribed_to",
+                    "weight": 1.0,
+                    "source": "ensg00000043514",
+                    "target": "enst00000462243",
+                    "directed": true,
+                    "direction": "ensg00000043514 -> enst00000462243",
                 }
-        ],
-        "legend": {
+            ],
+            "legend": {
                 "nodeTypes": [
-                        {
-                                "label": "gene",
-                                "color": "rgba(59, 130, 246, 0.7)",
-                                "description": "gene"
-                        },
-                        {
-                                "label": "transcript",
-                                "color": "rgba(34, 197, 94, 0.7)",
-                                "description": "transcript"
-                        },
-                        {
-                                "label": "protein",
-                                "color": "rgba(245, 101, 101, 0.7)",
-                                "description": "Protein"
-                        }
+                    {
+                        "label": "gene",
+                        "color": "rgba(59, 130, 246, 0.7)",
+                        "description": "gene"
+                    },
+                    {
+                        "label": "transcript",
+                        "color": "rgba(34, 197, 94, 0.7)",
+                        "description": "transcript"
+                    },
+                    {
+                        "label": "protein",
+                        "color": "rgba(245, 101, 101, 0.7)",
+                        "description": "Protein"
+                    }
                 ],
                 "edgeTypes": [
-                        {
-                                "label": "transcribed_to",
-                                "color": "rgba(34, 100, 94, 0.7)",
-                                "description": "transcribed_to"
-                        },
-                        {
-                                "label": "translates_to",
-                                "color": "rgba(245, 190, 101, 0.7)",
-                                "description": "translates_to"
-                        }
-                    ]
-                }
-            };
+                    {
+                        "label": "transcribed_to",
+                        "color": "rgba(34, 100, 94, 0.7)",
+                        "description": "transcribed_to"
+                    },
+                    {
+                        "label": "translates_to",
+                        "color": "rgba(245, 190, 101, 0.7)",
+                        "description": "translates_to"
+                    }
+                ]
+            }
+        };
 
         // Dynamic Style Management System
         class StyleManager {
@@ -728,42 +1229,42 @@
                 this.discoveredEdgeTypes = new Set();
                 this.colorSeed = 0;
             }
-            
+
             discoverTypes(nodes, edges) {
                 // Clear previous discoveries for fresh analysis
                 this.discoveredNodeTypes.clear();
                 this.discoveredEdgeTypes.clear();
-                
+
                 // Discover all unique node types (excluding anchors as they have special handling)
                 nodes.forEach(node => {
                     if (node.label && !node.anchor) {
                         this.discoveredNodeTypes.add(node.label);
                     }
                 });
-                
+
                 // Discover all unique edge types
                 edges.forEach(edge => {
                     if (edge.label) {
                         this.discoveredEdgeTypes.add(edge.label);
                     }
                 });
-                
+
                 // Generate colors for discovered types
                 this.generateColorsForTypes();
-                
+
                 // Update legend immediately after discovery
                 this.updateLegend();
-                
+
                 // Validate requirements are met
                 this.validateLegendRequirements();
-                
+
                 console.log(`Legend updated: ${this.discoveredNodeTypes.size} node types, ${this.discoveredEdgeTypes.size} edge types`);
             }
-            
+
             generateColorsForTypes() {
                 // Reset color seed for consistent color generation
                 this.colorSeed = 0;
-                
+
                 // Generate colors for node types with better distribution
                 const sortedNodeTypes = Array.from(this.discoveredNodeTypes).sort();
                 sortedNodeTypes.forEach(type => {
@@ -771,7 +1272,7 @@
                         this.nodeTypeColors.set(type, this.generateLightTransparentColor(0.7));
                     }
                 });
-                
+
                 // Generate colors for edge types with slightly more transparency
                 const sortedEdgeTypes = Array.from(this.discoveredEdgeTypes).sort();
                 sortedEdgeTypes.forEach(type => {
@@ -780,80 +1281,80 @@
                     }
                 });
             }
-            
+
             generateLightTransparentColor(alpha = 0.7) {
                 // Use golden angle for optimal color distribution
                 const hue = (this.colorSeed * 137.508) % 360;
-                
+
                 // Ensure good saturation and lightness for readability
                 const saturation = 50 + (this.colorSeed * 19) % 25; // 50-75% saturation
                 const lightness = 65 + (this.colorSeed * 13) % 20; // 65-85% lightness
-                
+
                 this.colorSeed++;
-                
+
                 // Convert HSL to RGB
                 const rgb = this.hslToRgb(hue / 360, saturation / 100, lightness / 100);
                 return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
             }
-            
+
             hslToRgb(h, s, l) {
                 let r, g, b;
-                
+
                 if (s === 0) {
                     r = g = b = l; // achromatic
                 } else {
                     const hue2rgb = (p, q, t) => {
                         if (t < 0) t += 1;
                         if (t > 1) t -= 1;
-                        if (t < 1/6) return p + (q - p) * 6 * t;
-                        if (t < 1/2) return q;
-                        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                        if (t < 1 / 6) return p + (q - p) * 6 * t;
+                        if (t < 1 / 2) return q;
+                        if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
                         return p;
                     };
-                    
+
                     const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
                     const p = 2 * l - q;
-                    r = hue2rgb(p, q, h + 1/3);
+                    r = hue2rgb(p, q, h + 1 / 3);
                     g = hue2rgb(p, q, h);
-                    b = hue2rgb(p, q, h - 1/3);
+                    b = hue2rgb(p, q, h - 1 / 3);
                 }
-                
+
                 return {
                     r: Math.round(r * 255),
                     g: Math.round(g * 255),
                     b: Math.round(b * 255)
                 };
             }
-            
+
             getNodeColor(type) {
                 if (!type) type = 'default';
-                
+
                 if (!this.nodeTypeColors.has(type)) {
                     this.nodeTypeColors.set(type, this.generateLightTransparentColor(0.7));
                     this.discoveredNodeTypes.add(type);
                     this.updateLegend();
                 }
-                
+
                 return this.nodeTypeColors.get(type);
             }
-            
+
             getEdgeColor(type) {
                 if (!type) type = 'default';
-                
+
                 if (!this.edgeTypeColors.has(type)) {
                     this.edgeTypeColors.set(type, this.generateLightTransparentColor(0.6));
                     this.discoveredEdgeTypes.add(type);
                     this.updateLegend();
                 }
-                
+
                 return this.edgeTypeColors.get(type);
             }
-            
+
             // Method to force legend refresh - useful for external calls
             refreshLegend() {
                 this.updateLegend();
             }
-            
+
             // Validate that legend meets all requirements
             validateLegendRequirements() {
                 const legendContent = document.getElementById('legend-content');
@@ -865,117 +1366,117 @@
                     proper_spacing: legendContent.querySelectorAll('.legend-section').length > 0,
                     color_mapping: this.nodeTypeColors.size > 0 || this.edgeTypeColors.size > 0
                 };
-                
+
                 console.log('Legend Requirements Validation:', results);
                 return results;
             }
-            
+
             updateLegend() {
                 const legendContent = document.getElementById('legend-content');
                 if (!legendContent) return;
-                
+
                 // Clear existing content
                 legendContent.innerHTML = '';
-                
+
                 // Create legend sections with proper spacing and readability
                 this.createNodeTypesLegend(legendContent);
                 this.createEdgeTypesLegend(legendContent);
                 this.createAnchorNodesLegend(legendContent);
             }
-            
+
             createNodeTypesLegend(legendContent) {
                 if (this.discoveredNodeTypes.size === 0) return;
-                
+
                 const nodeSection = document.createElement('div');
                 nodeSection.className = 'legend-section';
-                
+
                 const header = document.createElement('h4');
                 header.textContent = 'Node Types';
                 nodeSection.appendChild(header);
-                
+
                 // Sort node types alphabetically for consistent display
                 const sortedNodeTypes = Array.from(this.discoveredNodeTypes).sort();
-                
+
                 sortedNodeTypes.forEach(type => {
                     const color = this.nodeTypeColors.get(type);
                     const item = document.createElement('div');
                     item.className = 'legend-item';
-                    
+
                     const colorBox = document.createElement('div');
                     colorBox.className = 'legend-color';
                     colorBox.style.backgroundColor = color;
-                    
+
                     const label = document.createElement('span');
                     label.textContent = type;
-                    
+
                     item.appendChild(colorBox);
                     item.appendChild(label);
                     nodeSection.appendChild(item);
                 });
-                
+
                 legendContent.appendChild(nodeSection);
             }
-            
+
             createEdgeTypesLegend(legendContent) {
                 if (this.discoveredEdgeTypes.size === 0) return;
-                
+
                 const edgeSection = document.createElement('div');
                 edgeSection.className = 'legend-section';
-                
+
                 const header = document.createElement('h4');
                 header.textContent = 'Edge Types';
                 edgeSection.appendChild(header);
-                
+
                 // Sort edge types alphabetically for consistent display
                 const sortedEdgeTypes = Array.from(this.discoveredEdgeTypes).sort();
-                
+
                 sortedEdgeTypes.forEach(type => {
                     const color = this.edgeTypeColors.get(type);
                     const item = document.createElement('div');
                     item.className = 'legend-item';
-                    
+
                     const colorBox = document.createElement('div');
                     colorBox.className = 'legend-color';
                     colorBox.style.backgroundColor = color;
-                    
+
                     const label = document.createElement('span');
                     label.textContent = type;
-                    
+
                     item.appendChild(colorBox);
                     item.appendChild(label);
                     edgeSection.appendChild(item);
                 });
-                
+
                 legendContent.appendChild(edgeSection);
             }
-            
+
             createAnchorNodesLegend(legendContent) {
                 // Always show anchor nodes section as per requirement 5.4
                 const anchorSection = document.createElement('div');
                 anchorSection.className = 'legend-section';
-                
+
                 const header = document.createElement('h4');
                 header.textContent = 'Special Nodes';
                 anchorSection.appendChild(header);
-                
+
                 const item = document.createElement('div');
                 item.className = 'legend-item';
-                
+
                 const colorBox = document.createElement('div');
                 colorBox.className = 'legend-shape';
                 colorBox.style.backgroundColor = 'rgba(239, 68, 68, 0.8)';
                 colorBox.style.borderRadius = '2px'; // Make it more square-like
-                
+
                 const label = document.createElement('span');
                 label.textContent = 'Anchor Nodes';
-                
+
                 item.appendChild(colorBox);
                 item.appendChild(label);
                 anchorSection.appendChild(item);
-                
+
                 legendContent.appendChild(anchorSection);
             }
-            
+
             getTypeStatistics() {
                 return {
                     nodeTypes: Array.from(this.discoveredNodeTypes),
@@ -994,7 +1495,7 @@
                 this.attractionStrength = 0.1;
                 this.damping = 0.9;
             }
-            
+
             applyForceDirectedLayout(nodes, edges) {
                 // Create node lookup
                 const nodeMap = {};
@@ -1004,7 +1505,7 @@
                     if (!node.vx) node.vx = 0;
                     if (!node.vy) node.vy = 0;
                 });
-                
+
                 // Apply force-directed layout algorithm
                 for (let iter = 0; iter < this.iterations; iter++) {
                     // Reset forces
@@ -1012,14 +1513,14 @@
                         node.fx = 0;
                         node.fy = 0;
                     });
-                    
+
                     // Apply repulsion forces between all nodes
                     for (let i = 0; i < nodes.length; i++) {
                         for (let j = i + 1; j < nodes.length; j++) {
                             this.applyRepulsion(nodes[i], nodes[j]);
                         }
                     }
-                    
+
                     // Apply attraction forces along edges
                     edges.forEach(edge => {
                         const source = nodeMap[edge.source];
@@ -1028,7 +1529,7 @@
                             this.applyAttraction(source, target);
                         }
                     });
-                    
+
                     // Update positions
                     nodes.forEach(node => {
                         if (!node.anchor) { // Don't move anchor nodes
@@ -1039,7 +1540,7 @@
                         }
                     });
                 }
-                
+
                 // Clean up temporary properties
                 nodes.forEach(node => {
                     delete node.fx;
@@ -1048,45 +1549,45 @@
                     delete node.vy;
                 });
             }
-            
+
             applyRepulsion(node1, node2) {
                 const dx = node2.x - node1.x;
                 const dy = node2.y - node1.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
-                
+
                 if (distance > 0 && distance < this.minDistance * 3) {
                     const force = this.repulsionStrength / (distance * distance);
                     const fx = (dx / distance) * force;
                     const fy = (dy / distance) * force;
-                    
+
                     node1.fx -= fx;
                     node1.fy -= fy;
                     node2.fx += fx;
                     node2.fy += fy;
                 }
             }
-            
+
             applyAttraction(source, target) {
                 const dx = target.x - source.x;
                 const dy = target.y - source.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
-                
+
                 if (distance > this.minDistance) {
                     const force = this.attractionStrength * (distance - this.minDistance);
                     const fx = (dx / distance) * force;
                     const fy = (dy / distance) * force;
-                    
+
                     source.fx += fx;
                     source.fy += fy;
                     target.fx -= fx;
                     target.fy -= fy;
                 }
             }
-            
+
             generateInitialLayout(nodes, edges) {
                 // Generate initial positions if not provided
                 const radius = Math.max(100, nodes.length * 15);
-                
+
                 nodes.forEach((node, index) => {
                     if (node.x === undefined || node.y === undefined) {
                         if (node.anchor) {
@@ -1101,7 +1602,7 @@
                         }
                     }
                 });
-                
+
                 // Apply force-directed layout to improve positioning
                 this.applyForceDirectedLayout(nodes, edges);
             }
@@ -1290,38 +1791,38 @@
                         node.y = pos[node.id].y;
                     }
                 });
-            }   
+            }
         }
 
         class CanvasNavigator {
             constructor(canvas, ctx) {
                 this.canvas = canvas;
                 this.ctx = ctx;
-                
+
                 // Transform state
                 this.transform = { x: 0, y: 0, scale: 1 };
-                
+
                 // Animation state
                 this.animationId = null;
                 this.isAnimating = false;
-                
+
                 // Canvas interaction state
                 this.isDragging = false;
                 this.lastMouseX = 0;
                 this.lastMouseY = 0;
-                
+
                 // Node interaction state
                 this.isDraggingNode = false;
                 this.draggedNode = null;
                 this.hoveredNode = null;
                 this.selectedNode = null;
                 this.nodeZOrder = []; // Track node layering for overlapping
-                
+
                 // Context menu and isolation state
                 this.contextMenuNode = null;
                 this.isolatedNode = null;
                 this.contextMenu = document.getElementById('context-menu');
-                
+
                 // Configuration
                 this.minZoom = 0.1;
                 this.maxZoom = 5.0;
@@ -1329,11 +1830,11 @@
                 this.animationDuration = 300; // ms
                 this.nodeRadius = 50;
                 this.hoverRadius = 25; // Slightly larger for easier interaction
-                
+
                 this.setupEventListeners();
                 this.render();
             }
-            
+
             setupEventListeners() {
                 // Mouse events for canvas and node interaction
                 this.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
@@ -1342,38 +1843,38 @@
                 this.canvas.addEventListener('mouseleave', (e) => this.handleMouseUp(e));
                 this.canvas.addEventListener('click', (e) => this.handleClick(e));
                 this.canvas.addEventListener('contextmenu', (e) => this.handleRightClick(e));
-                
+
                 // Wheel event for zoom
                 this.canvas.addEventListener('wheel', (e) => this.handleWheel(e));
-                
+
                 // Zoom control buttons
                 document.getElementById('zoom-in').addEventListener('click', () => this.zoomIn());
                 document.getElementById('zoom-out').addEventListener('click', () => this.zoomOut());
                 document.getElementById('recenter').addEventListener('click', () => this.recenter());
-                
+
                 // Context menu event handlers
                 this.setupContextMenuHandlers();
             }
-            
+
             handleMouseDown(e) {
                 if (e.button === 0) { // Left mouse button
                     const rect = this.canvas.getBoundingClientRect();
                     const mouseX = e.clientX - rect.left;
                     const mouseY = e.clientY - rect.top;
                     const worldPos = this.screenToWorld(mouseX, mouseY);
-                    
+
                     // Check if clicking on a node
                     const clickedNode = this.getNodeAtPosition(worldPos.x, worldPos.y);
-                    
+
                     if (clickedNode) {
                         // Start node dragging
                         this.isDraggingNode = true;
                         this.draggedNode = clickedNode;
                         this.selectedNode = clickedNode;
-                        
+
                         // Bring node to front in z-order
                         this.bringNodeToFront(clickedNode);
-                        
+
                         this.canvas.style.cursor = 'grabbing';
                         this.render(); // Re-render to show selection
                     } else {
@@ -1382,77 +1883,77 @@
                         this.selectedNode = null; // Clear selection
                         this.canvas.style.cursor = 'grabbing';
                     }
-                    
+
                     this.lastMouseX = e.clientX;
                     this.lastMouseY = e.clientY;
                 }
             }
-            
+
             handleMouseMove(e) {
                 const rect = this.canvas.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
                 const worldPos = this.screenToWorld(mouseX, mouseY);
-                
+
                 if (this.isDraggingNode && this.draggedNode) {
                     // Update node position with smooth movement
                     this.draggedNode.x = worldPos.x;
                     this.draggedNode.y = worldPos.y;
-                    
+
                     // Ensure dragged node stays on top
                     this.bringNodeToFront(this.draggedNode);
-                    
+
                     this.render(); // Re-render to show node movement and edge updates
                 } else if (this.isDragging) {
                     // Canvas panning
                     const deltaX = e.clientX - this.lastMouseX;
                     const deltaY = e.clientY - this.lastMouseY;
-                    
+
                     this.transform.x += deltaX;
                     this.transform.y += deltaY;
-                    
+
                     this.render();
                 } else {
                     // Handle hover effects with smooth transitions
                     const hoveredNode = this.getNodeAtPosition(worldPos.x, worldPos.y);
-                    
+
                     if (hoveredNode !== this.hoveredNode) {
                         this.hoveredNode = hoveredNode;
-                        
+
                         // Update cursor based on hover state
                         if (hoveredNode) {
                             this.canvas.style.cursor = 'pointer';
                         } else {
                             this.canvas.style.cursor = 'grab';
                         }
-                        
+
                         this.render(); // Re-render to show hover effects
                     }
                 }
-                
+
                 this.lastMouseX = e.clientX;
                 this.lastMouseY = e.clientY;
             }
-            
+
             handleMouseUp(e) {
                 if (this.isDraggingNode) {
                     this.isDraggingNode = false;
                     this.draggedNode = null;
-                    
+
                     // Update cursor based on current hover state
                     const rect = this.canvas.getBoundingClientRect();
                     const mouseX = e.clientX - rect.left;
                     const mouseY = e.clientY - rect.top;
                     const worldPos = this.screenToWorld(mouseX, mouseY);
                     const hoveredNode = this.getNodeAtPosition(worldPos.x, worldPos.y);
-                    
+
                     this.canvas.style.cursor = hoveredNode ? 'pointer' : 'grab';
                 } else if (this.isDragging) {
                     this.isDragging = false;
                     this.canvas.style.cursor = 'grab';
                 }
             }
-            
+
             handleClick(e) {
                 // Handle node focus for overlapping nodes
                 if (!this.isDraggingNode && !this.isDragging) {
@@ -1460,9 +1961,9 @@
                     const mouseX = e.clientX - rect.left;
                     const mouseY = e.clientY - rect.top;
                     const worldPos = this.screenToWorld(mouseX, mouseY);
-                    
+
                     const clickedNode = this.getNodeAtPosition(worldPos.x, worldPos.y);
-                    
+
                     if (clickedNode) {
                         // If clicking on a node that's underneath another, bring it to front
                         this.selectedNode = clickedNode;
@@ -1470,21 +1971,21 @@
                         this.render();
                     }
                 }
-                
+
                 // Hide context menu on any click
                 this.hideContextMenu();
             }
-            
+
             handleRightClick(e) {
                 e.preventDefault();
-                
+
                 const rect = this.canvas.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
                 const worldPos = this.screenToWorld(mouseX, mouseY);
-                
+
                 const clickedNode = this.getNodeAtPosition(worldPos.x, worldPos.y);
-                
+
                 if (clickedNode) {
                     // Show context menu for the clicked node
                     this.showContextMenu(e.clientX, e.clientY, clickedNode);
@@ -1493,7 +1994,7 @@
                     this.hideContextMenu();
                 }
             }
-            
+
             setupContextMenuHandlers() {
                 // Isolate node functionality
                 document.getElementById('isolate-node').addEventListener('click', () => {
@@ -1502,7 +2003,7 @@
                         this.hideContextMenu();
                     }
                 });
-                
+
                 // Copy label functionality
                 document.getElementById('copy-label').addEventListener('click', () => {
                     if (this.contextMenuNode) {
@@ -1510,13 +2011,13 @@
                         this.hideContextMenu();
                     }
                 });
-                
+
                 // Cancel isolation functionality
                 document.getElementById('cancel-isolate').addEventListener('click', () => {
                     this.cancelIsolation();
                     this.hideContextMenu();
                 });
-                
+
                 // Hide context menu when clicking outside
                 document.addEventListener('click', (e) => {
                     if (!this.contextMenu.contains(e.target)) {
@@ -1524,14 +2025,14 @@
                     }
                 });
             }
-            
+
             showContextMenu(x, y, node) {
                 this.contextMenuNode = node;
-                
+
                 // Update context menu items based on current state
                 const isolateItem = document.getElementById('isolate-node');
                 const cancelIsolateItem = document.getElementById('cancel-isolate');
-                
+
                 if (this.isolatedNode === node) {
                     // If this node is already isolated, show cancel option
                     isolateItem.style.display = 'none';
@@ -1541,12 +2042,12 @@
                     isolateItem.style.display = 'block';
                     cancelIsolateItem.style.display = 'none';
                 }
-                
+
                 // Position context menu
                 this.contextMenu.style.left = x + 'px';
                 this.contextMenu.style.top = y + 'px';
                 this.contextMenu.classList.remove('hidden');
-                
+
                 // Ensure context menu stays within viewport
                 const rect = this.contextMenu.getBoundingClientRect();
                 if (rect.right > window.innerWidth) {
@@ -1556,24 +2057,24 @@
                     this.contextMenu.style.top = (y - rect.height) + 'px';
                 }
             }
-            
+
             hideContextMenu() {
                 this.contextMenu.classList.add('hidden');
                 this.contextMenuNode = null;
             }
-            
+
             isolateNode(node) {
                 this.isolatedNode = node;
                 console.log(`Isolated node: ${node.label || node.id}`);
                 this.render(); // Re-render to apply isolation effects
             }
-            
+
             cancelIsolation() {
                 this.isolatedNode = null;
                 console.log('Isolation cancelled');
                 this.render(); // Re-render to remove isolation effects
             }
-            
+
             copyNodeLabel(node) {
                 // Copy only the label (or id) of the specific node
                 const label = node.display_label || node.label;
@@ -1590,7 +2091,7 @@
                     this.fallbackCopyToClipboard(label);
                 }
             }
-            
+
             fallbackCopyToClipboard(text) {
                 const textArea = document.createElement('textarea');
                 textArea.value = text;
@@ -1600,7 +2101,7 @@
                 document.body.appendChild(textArea);
                 textArea.focus();
                 textArea.select();
-                
+
                 try {
                     document.execCommand('copy');
                     console.log('All node labels copied to clipboard (fallback)');
@@ -1609,10 +2110,10 @@
                     console.error('Fallback copy failed:', err);
                     alert('Copy to clipboard failed. Please copy manually.');
                 }
-                
+
                 document.body.removeChild(textArea);
             }
-            
+
             showCopyFeedback() {
                 // Create temporary feedback element
                 const feedback = document.createElement('div');
@@ -1632,9 +2133,9 @@
                     color: var(--text-primary);
                     backdrop-filter: blur(10px);
                 `;
-                
+
                 document.body.appendChild(feedback);
-                
+
                 // Remove feedback after 2 seconds
                 setTimeout(() => {
                     if (feedback.parentNode) {
@@ -1642,172 +2143,172 @@
                     }
                 }, 2000);
             }
-            
+
             getTestNodes() {
                 // Return test nodes for fallback
                 return [
-                    {id: 'origin', label: 'Origin'},
-                    {id: 'processor', label: 'Processor'},
-                    {id: 'database', label: 'Database'},
-                    {id: 'api', label: 'API Gateway'},
-                    {id: 'cache', label: 'Cache'},
-                    {id: 'monitor', label: 'Monitor'},
-                    {id: 'queue', label: 'Message Queue'},
-                    {id: 'auth', label: 'Auth Service'}
+                    { id: 'origin', label: 'Origin' },
+                    { id: 'processor', label: 'Processor' },
+                    { id: 'database', label: 'Database' },
+                    { id: 'api', label: 'API Gateway' },
+                    { id: 'cache', label: 'Cache' },
+                    { id: 'monitor', label: 'Monitor' },
+                    { id: 'queue', label: 'Message Queue' },
+                    { id: 'auth', label: 'Auth Service' }
                 ];
             }
-            
+
             isNodeConnectedToIsolated(node) {
                 if (!this.isolatedNode) return false;
-                
+
                 const edges = GRAPH_DATA && GRAPH_DATA.edges ? GRAPH_DATA.edges : this.getTestEdges();
-                
+
                 // Check if this node is directly connected to the isolated node
-                return edges.some(edge => 
+                return edges.some(edge =>
                     (edge.source === this.isolatedNode.id && edge.target === node.id) ||
                     (edge.target === this.isolatedNode.id && edge.source === node.id)
                 );
             }
-            
+
             isEdgeConnectedToIsolated(edge) {
                 if (!this.isolatedNode) return false;
-                
+
                 // Check if this edge is directly connected to the isolated node
                 return edge.source === this.isolatedNode.id || edge.target === this.isolatedNode.id;
             }
-            
+
             getTestEdges() {
                 // Return test edges for fallback
                 return [
-                    {source: 'origin', target: 'processor'},
-                    {source: 'origin', target: 'database'},
-                    {source: 'processor', target: 'api'},
-                    {source: 'database', target: 'cache'},
-                    {source: 'api', target: 'monitor'},
-                    {source: 'cache', target: 'queue'},
-                    {source: 'monitor', target: 'queue'},
-                    {source: 'api', target: 'auth'}
+                    { source: 'origin', target: 'processor' },
+                    { source: 'origin', target: 'database' },
+                    { source: 'processor', target: 'api' },
+                    { source: 'database', target: 'cache' },
+                    { source: 'api', target: 'monitor' },
+                    { source: 'cache', target: 'queue' },
+                    { source: 'monitor', target: 'queue' },
+                    { source: 'api', target: 'auth' }
                 ];
             }
-            
+
             handleWheel(e) {
                 e.preventDefault();
-                
+
                 const rect = this.canvas.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
-                
+
                 // Determine zoom direction
                 const zoomDirection = e.deltaY > 0 ? -1 : 1;
                 const zoomFactor = 1 + (this.zoomStep * zoomDirection);
-                
+
                 this.zoomAtPoint(mouseX, mouseY, zoomFactor);
             }
-            
+
             zoomIn() {
                 const centerX = this.canvas.width / 2;
                 const centerY = this.canvas.height / 2;
                 const zoomFactor = 1 + this.zoomStep;
-                
+
                 this.animateZoomAtPoint(centerX, centerY, zoomFactor);
             }
-            
+
             zoomOut() {
                 const centerX = this.canvas.width / 2;
                 const centerY = this.canvas.height / 2;
                 const zoomFactor = 1 - this.zoomStep;
-                
+
                 this.animateZoomAtPoint(centerX, centerY, zoomFactor);
             }
-            
+
             zoomAtPoint(mouseX, mouseY, zoomFactor) {
                 const newScale = Math.max(this.minZoom, Math.min(this.maxZoom, this.transform.scale * zoomFactor));
-                
+
                 if (newScale !== this.transform.scale) {
                     // Calculate zoom point in world coordinates
                     const worldX = (mouseX - this.transform.x) / this.transform.scale;
                     const worldY = (mouseY - this.transform.y) / this.transform.scale;
-                    
+
                     // Update scale
                     this.transform.scale = newScale;
-                    
+
                     // Adjust position to keep zoom point fixed
                     this.transform.x = mouseX - worldX * this.transform.scale;
                     this.transform.y = mouseY - worldY * this.transform.scale;
-                    
+
                     this.render();
                 }
             }
-            
+
             animateZoomAtPoint(mouseX, mouseY, zoomFactor) {
                 const targetScale = Math.max(this.minZoom, Math.min(this.maxZoom, this.transform.scale * zoomFactor));
-                
+
                 if (targetScale === this.transform.scale) return;
-                
+
                 // Calculate target transform
                 const worldX = (mouseX - this.transform.x) / this.transform.scale;
                 const worldY = (mouseY - this.transform.y) / this.transform.scale;
                 const targetX = mouseX - worldX * targetScale;
                 const targetY = mouseY - worldY * targetScale;
-                
+
                 this.animateTransform(targetX, targetY, targetScale);
             }
-            
+
             recenter() {
                 // Animate back to center position with scale 1
                 this.animateTransform(0, 0, 1);
             }
-            
+
             animateTransform(targetX, targetY, targetScale) {
                 if (this.isAnimating) {
                     cancelAnimationFrame(this.animationId);
                 }
-                
+
                 const startTime = performance.now();
                 const startX = this.transform.x;
                 const startY = this.transform.y;
                 const startScale = this.transform.scale;
-                
+
                 const deltaX = targetX - startX;
                 const deltaY = targetY - startY;
                 const deltaScale = targetScale - startScale;
-                
+
                 this.isAnimating = true;
-                
+
                 const animate = (currentTime) => {
                     const elapsed = currentTime - startTime;
                     const progress = Math.min(elapsed / this.animationDuration, 1);
-                    
+
                     // Easing function (ease-out)
                     const easeOut = 1 - Math.pow(1 - progress, 3);
-                    
+
                     this.transform.x = startX + deltaX * easeOut;
                     this.transform.y = startY + deltaY * easeOut;
                     this.transform.scale = startScale + deltaScale * easeOut;
-                    
+
                     this.render();
-                    
+
                     if (progress < 1) {
                         this.animationId = requestAnimationFrame(animate);
                     } else {
                         this.isAnimating = false;
                     }
                 };
-                
+
                 this.animationId = requestAnimationFrame(animate);
             }
-            
+
             applyTransform() {
                 this.ctx.setTransform(
                     this.transform.scale, 0, 0, this.transform.scale,
                     this.transform.x, this.transform.y
                 );
             }
-            
+
             resetTransform() {
                 this.ctx.setTransform(1, 0, 0, 1, 0, 0);
             }
-            
+
             render() {
                 // Clear canvas
                 this.resetTransform();
@@ -1827,18 +2328,18 @@
                 // Reset transform for UI overlays if needed
                 this.resetTransform();
             }
-            
 
-            
+
+
             drawGraph() {
                 // Draw aesthetic grid background that transforms with canvas navigation
                 this.drawGrid();
-                
+
                 // Draw graph content using the graph rendering engine
                 if (GRAPH_DATA && GRAPH_DATA.nodes && GRAPH_DATA.edges) {
                     this.drawEdges(GRAPH_DATA.edges, GRAPH_DATA.nodes);
                     this.drawNodes(GRAPH_DATA.nodes);
-                    
+
                     // Draw labels if enabled
                     if (window.labelsEnabled) {
                         this.drawNodeLabels(GRAPH_DATA.nodes);
@@ -1849,15 +2350,15 @@
                     this.drawTestGraph();
                 }
             }
-            
+
             drawTestGraph() {
                 // Enhanced test graph with diverse types and custom metadata
                 const testNodes = [
                     {
-                        id: 'origin', 
-                        x: 0, y: 0, 
-                        type: 'anchor', 
-                        label: 'Origin', 
+                        id: 'origin',
+                        x: 0, y: 0,
+                        type: 'anchor',
+                        label: 'Origin',
                         anchor: true,
                         metadata: {
                             importance: 'high',
@@ -1866,10 +2367,10 @@
                         }
                     },
                     {
-                        id: 'processor', 
-                        x: 120, y: 60, 
-                        type: 'computation', 
-                        label: 'Processor', 
+                        id: 'processor',
+                        x: 120, y: 60,
+                        type: 'computation',
+                        label: 'Processor',
                         anchor: false,
                         metadata: {
                             cpu_usage: '75%',
@@ -1878,10 +2379,10 @@
                         }
                     },
                     {
-                        id: 'database', 
-                        x: -90, y: 140, 
-                        type: 'storage', 
-                        label: 'Database', 
+                        id: 'database',
+                        x: -90, y: 140,
+                        type: 'storage',
+                        label: 'Database',
                         anchor: false,
                         metadata: {
                             size: '500MB',
@@ -1890,10 +2391,10 @@
                         }
                     },
                     {
-                        id: 'api', 
-                        x: 180, y: -120, 
-                        type: 'service', 
-                        label: 'API Gateway', 
+                        id: 'api',
+                        x: 180, y: -120,
+                        type: 'service',
+                        label: 'API Gateway',
                         anchor: false,
                         metadata: {
                             requests_per_sec: 150,
@@ -1902,10 +2403,10 @@
                         }
                     },
                     {
-                        id: 'cache', 
-                        x: -140, y: -90, 
-                        type: 'storage', 
-                        label: 'Cache', 
+                        id: 'cache',
+                        x: -140, y: -90,
+                        type: 'storage',
+                        label: 'Cache',
                         anchor: false,
                         metadata: {
                             hit_rate: '85%',
@@ -1914,10 +2415,10 @@
                         }
                     },
                     {
-                        id: 'monitor', 
-                        x: 60, y: -180, 
-                        type: 'analytics', 
-                        label: 'Monitor', 
+                        id: 'monitor',
+                        x: 60, y: -180,
+                        type: 'analytics',
+                        label: 'Monitor',
                         anchor: false,
                         metadata: {
                             alerts: 3,
@@ -1926,10 +2427,10 @@
                         }
                     },
                     {
-                        id: 'queue', 
-                        x: -60, y: 180, 
-                        type: 'messaging', 
-                        label: 'Message Queue', 
+                        id: 'queue',
+                        x: -60, y: 180,
+                        type: 'messaging',
+                        label: 'Message Queue',
                         anchor: false,
                         metadata: {
                             messages: 1250,
@@ -1938,10 +2439,10 @@
                         }
                     },
                     {
-                        id: 'auth', 
-                        x: 200, y: 80, 
-                        type: 'security', 
-                        label: 'Auth Service', 
+                        id: 'auth',
+                        x: 200, y: 80,
+                        type: 'security',
+                        label: 'Auth Service',
                         anchor: false,
                         metadata: {
                             active_sessions: 89,
@@ -1950,13 +2451,13 @@
                         }
                     }
                 ];
-                
+
                 const testEdges = [
                     {
-                        source: 'origin', 
-                        target: 'processor', 
-                        type: 'data_flow', 
-                        directed: true, 
+                        source: 'origin',
+                        target: 'processor',
+                        type: 'data_flow',
+                        directed: true,
                         label: 'processes',
                         metadata: {
                             bandwidth: '100Mbps',
@@ -1965,10 +2466,10 @@
                         }
                     },
                     {
-                        source: 'origin', 
-                        target: 'database', 
-                        type: 'query', 
-                        directed: true, 
+                        source: 'origin',
+                        target: 'database',
+                        type: 'query',
+                        directed: true,
                         label: 'queries',
                         metadata: {
                             query_type: 'SELECT',
@@ -1977,10 +2478,10 @@
                         }
                     },
                     {
-                        source: 'processor', 
-                        target: 'api', 
-                        type: 'http_request', 
-                        directed: false, 
+                        source: 'processor',
+                        target: 'api',
+                        type: 'http_request',
+                        directed: false,
                         label: 'communicates',
                         metadata: {
                             method: 'POST',
@@ -1989,9 +2490,9 @@
                         }
                     },
                     {
-                        source: 'database', 
-                        target: 'cache', 
-                        type: 'cache_sync', 
+                        source: 'database',
+                        target: 'cache',
+                        type: 'cache_sync',
                         directed: true,
                         metadata: {
                             sync_interval: '30s',
@@ -2000,10 +2501,10 @@
                         }
                     },
                     {
-                        source: 'api', 
-                        target: 'monitor', 
-                        type: 'telemetry', 
-                        directed: true, 
+                        source: 'api',
+                        target: 'monitor',
+                        type: 'telemetry',
+                        directed: true,
                         label: 'reports',
                         metadata: {
                             metrics_format: 'prometheus',
@@ -2012,9 +2513,9 @@
                         }
                     },
                     {
-                        source: 'cache', 
-                        target: 'queue', 
-                        type: 'event_stream', 
+                        source: 'cache',
+                        target: 'queue',
+                        type: 'event_stream',
                         directed: false,
                         metadata: {
                             event_type: 'cache_invalidation',
@@ -2023,9 +2524,9 @@
                         }
                     },
                     {
-                        source: 'monitor', 
-                        target: 'queue', 
-                        type: 'alert', 
+                        source: 'monitor',
+                        target: 'queue',
+                        type: 'alert',
                         directed: true,
                         label: 'alerts',
                         metadata: {
@@ -2035,9 +2536,9 @@
                         }
                     },
                     {
-                        source: 'api', 
-                        target: 'auth', 
-                        type: 'authentication', 
+                        source: 'api',
+                        target: 'auth',
+                        type: 'authentication',
                         directed: true,
                         label: 'validates',
                         metadata: {
@@ -2047,47 +2548,47 @@
                         }
                     }
                 ];
-                
+
                 // Discover types and generate colors
                 if (window.styleManager) {
                     window.styleManager.discoverTypes(testNodes, testEdges);
                 }
-                
+
                 // Apply layout algorithm to test nodes
                 if (window.layoutEngine) {
                     // window.layoutEngine.generateInitialLayout(testNodes, testEdges);
                     window.layoutEngine.generateConcentricLayout(GRAPH_DATA.nodes, GRAPH_DATA.edges);
                 }
-                
+
                 this.drawEdges(testEdges, testNodes);
                 this.drawNodes(testNodes);
-                
+
                 if (window.labelsEnabled) {
                     this.drawNodeLabels(testNodes);
                     this.drawEdgeLabels(testEdges, testNodes);
                 }
             }
-            
+
             drawNodes(nodes) {
                 const ctx = this.ctx;
                 const nodeRadius = 50;
                 const baseLineWidth = 3 / this.transform.scale;
-                
+
                 // Draw nodes in z-order (bottom to top)
                 const orderedNodes = this.getNodesInZOrder(nodes);
-                
+
                 orderedNodes.forEach(node => {
                     let nodeColor = this.getNodeColor(node);
                     let borderColor = this.getNodeBorderColor(node);
                     let lineWidth = baseLineWidth;
                     let radius = nodeRadius;
                     let size = nodeRadius * 1.2;
-                    
+
                     // Apply isolation effects
                     const isIsolated = this.isolatedNode !== null;
                     const isIsolatedNode = this.isolatedNode && this.isolatedNode.id === node.id;
                     const isConnectedToIsolated = isIsolated && !isIsolatedNode && this.isNodeConnectedToIsolated(node);
-                    
+
                     if (isIsolated && !isIsolatedNode && !isConnectedToIsolated) {
                         // Apply blur and opacity reduction to non-connected nodes
                         ctx.filter = 'blur(2px)';
@@ -2096,12 +2597,12 @@
                     } else {
                         ctx.filter = 'none';
                     }
-                    
+
                     // Apply visual feedback for interaction states
                     const isHovered = this.hoveredNode && this.hoveredNode.id === node.id;
                     const isSelected = this.selectedNode && this.selectedNode.id === node.id;
                     const isDragged = this.draggedNode && this.draggedNode.id === node.id;
-                    
+
                     // Enhance visual feedback for different states
                     if (isDragged) {
                         // Dragged node: larger, brighter border, slight glow effect
@@ -2109,7 +2610,7 @@
                         borderColor = 'rgba(59, 130, 246, 0.8)';
                         radius = nodeRadius * 1.1;
                         size = nodeRadius * 1.3;
-                        
+
                         // Add glow effect
                         ctx.shadowColor = 'rgba(59, 130, 246, 0.4)';
                         ctx.shadowBlur = 10 / this.transform.scale;
@@ -2126,11 +2627,11 @@
                         radius = nodeRadius * 1.02;
                         size = nodeRadius * 1.22;
                     }
-                    
+
                     ctx.lineWidth = lineWidth;
                     ctx.fillStyle = nodeColor;
                     ctx.strokeStyle = borderColor;
-                    
+
                     if (node.anchor) {
                         // Draw anchor nodes as red squares
                         ctx.fillRect(node.x - size, node.y - size, size * 2, size * 2);
@@ -2142,38 +2643,38 @@
                         ctx.fill();
                         ctx.stroke();
                     }
-                    
+
                     // Reset shadow effects and filters
                     ctx.shadowColor = 'transparent';
                     ctx.shadowBlur = 0;
                     ctx.filter = 'none';
                 });
             }
-            
+
             drawEdges(edges, nodes) {
                 const ctx = this.ctx;
                 const baseLineWidth = 3 / this.transform.scale;
                 const arrowSize = 12 / this.transform.scale;
-                
+
                 // Create node lookup for position data
                 const nodeMap = {};
                 nodes.forEach(node => {
                     nodeMap[node.id] = node;
                 });
-                
+
                 edges.forEach(edge => {
                     const sourceNode = nodeMap[edge.source];
                     const targetNode = nodeMap[edge.target];
-                    
+
                     if (!sourceNode || !targetNode) return;
-                    
+
                     let edgeColor = this.getEdgeColor(edge);
                     let lineWidth = baseLineWidth;
-                    
+
                     // Apply isolation effects
                     const isIsolated = this.isolatedNode !== null;
                     const isConnectedToIsolated = isIsolated && this.isEdgeConnectedToIsolated(edge);
-                    
+
                     if (isIsolated && !isConnectedToIsolated) {
                         // Apply blur and opacity reduction to non-connected edges
                         ctx.filter = 'blur(2px)';
@@ -2181,13 +2682,13 @@
                     } else {
                         ctx.filter = 'none';
                     }
-                    
+
                     // Enhance edges connected to dragged or selected nodes
                     const isSourceDragged = this.draggedNode && this.draggedNode.id === sourceNode.id;
                     const isTargetDragged = this.draggedNode && this.draggedNode.id === targetNode.id;
                     const isSourceSelected = this.selectedNode && this.selectedNode.id === sourceNode.id;
                     const isTargetSelected = this.selectedNode && this.selectedNode.id === targetNode.id;
-                    
+
                     if (isSourceDragged || isTargetDragged) {
                         // Edges connected to dragged nodes: thicker, more prominent
                         lineWidth = baseLineWidth * 1.5;
@@ -2197,11 +2698,11 @@
                         lineWidth = baseLineWidth * 1.2;
                         edgeColor = edgeColor.replace(/[\d\.]+\)$/, '0.7)'); // Slightly increase opacity
                     }
-                    
+
                     ctx.strokeStyle = edgeColor;
                     ctx.fillStyle = edgeColor;
                     ctx.lineWidth = lineWidth;
-                    
+
                     // Calculate edge endpoints (accounting for node radius and current visual state)
                     const getNodeRadius = (node) => {
                         const base = this.nodeRadius || 50;
@@ -2264,7 +2765,7 @@
                             };
                         }
                     }
-                    
+
                     const start = getNodeEdgeIntersection(sourceNode, sourceNode.x, sourceNode.y, targetNode.x, targetNode.y);
                     const end = getNodeEdgeIntersection(targetNode, targetNode.x, targetNode.y, sourceNode.x, sourceNode.y);
 
@@ -2272,7 +2773,7 @@
                     ctx.moveTo(start.x, start.y);
                     ctx.lineTo(end.x, end.y);
                     ctx.stroke();
-                    
+
                     // Draw arrow for directed edges
                     if (edge.directed) {
                         const dx = end.x - start.x;
@@ -2282,12 +2783,12 @@
                         const unitY = dy / length;
                         this.drawArrow(ctx, end.x, end.y, unitX, unitY, arrowSize);
                     }
-                    
+
                     // Reset filter effects
                     ctx.filter = 'none';
                 });
             }
-            
+
             drawArrow(ctx, x, y, dirX, dirY, size) {
                 // Calculate arrow points
                 const arrowAngle = Math.PI / 6; // 30 degrees
@@ -2295,7 +2796,7 @@
                 const arrowY1 = y - size * (dirY * Math.cos(arrowAngle) + dirX * Math.sin(arrowAngle));
                 const arrowX2 = x - size * (dirX * Math.cos(-arrowAngle) - dirY * Math.sin(-arrowAngle));
                 const arrowY2 = y - size * (dirY * Math.cos(-arrowAngle) + dirX * Math.sin(-arrowAngle));
-                
+
                 // Draw arrow
                 ctx.beginPath();
                 ctx.moveTo(x, y);
@@ -2304,25 +2805,25 @@
                 ctx.lineTo(arrowX2, arrowY2);
                 ctx.stroke();
             }
-            
+
             getNodeColor(node) {
                 if (node.anchor) {
                     return 'rgba(239, 68, 68, 0.8)'; // Fixed red color for anchor nodes
                 }
-                
+
                 // Get or generate color for this node type
                 return window.styleManager.getNodeColor(node.label);
             }
-            
+
             getNodeBorderColor(node) {
                 return 'rgba(0, 0, 0, 0.3)';
             }
-            
+
             getEdgeColor(edge) {
                 // Get or generate color for this edge type
                 return window.styleManager.getEdgeColor(edge.label);
             }
-            
+
             drawNodeLabels(nodes) {
                 const ctx = this.ctx;
                 const fontSize = 14;
@@ -2398,7 +2899,7 @@
                     }
                 });
             }
-            
+
             // Helper method to draw rounded rectangles
             drawRoundedRect(ctx, x, y, width, height, radius) {
                 ctx.beginPath();
@@ -2415,36 +2916,36 @@
                 ctx.fill();
                 ctx.stroke();
             }
-            
+
             drawEdgeLabels(edges, nodes) {
                 const ctx = this.ctx;
                 const fontSize = Math.max(10, 12 / this.transform.scale);
                 ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                
+
                 // Create node lookup for position data
                 const nodeMap = {};
                 nodes.forEach(node => {
                     nodeMap[node.id] = node;
                 });
-                
+
                 edges.forEach(edge => {
                     if (!edge.label) return;
-                    
+
                     const sourceNode = nodeMap[edge.source];
                     const targetNode = nodeMap[edge.target];
-                    
+
                     if (!sourceNode || !targetNode) return;
-                    
+
                     // Apply isolation effects
                     const isIsolated = this.isolatedNode !== null;
                     const isConnectedToIsolated = isIsolated && this.isEdgeConnectedToIsolated(edge);
-                    
+
                     let bgOpacity = 0.9;
                     let textOpacity = 0.7;
                     let borderOpacity = 0.1;
-                    
+
                     if (isIsolated && !isConnectedToIsolated) {
                         // Apply blur and opacity reduction to non-connected edge labels
                         ctx.filter = 'blur(1px)';
@@ -2454,26 +2955,26 @@
                     } else {
                         ctx.filter = 'none';
                     }
-                    
+
                     // Calculate midpoint of edge
                     const midX = (sourceNode.x + targetNode.x) / 2;
                     const midY = (sourceNode.y + targetNode.y) / 2;
-                    
+
                     // Measure text dimensions
                     const textMetrics = ctx.measureText(edge.label);
                     const textWidth = textMetrics.width;
                     const textHeight = fontSize;
-                    
+
                     // Calculate label background dimensions with padding
                     const padding = 2 / this.transform.scale;
                     const bgWidth = textWidth + (padding * 2);
                     const bgHeight = textHeight + (padding * 2);
-                    
+
                     // Draw transparent rectangular background
                     ctx.fillStyle = `rgba(255, 255, 255, ${bgOpacity})`;
                     ctx.strokeStyle = `rgba(0, 0, 0, ${borderOpacity})`;
                     ctx.lineWidth = 0.5 / this.transform.scale;
-                    
+
                     ctx.fillRect(
                         midX - bgWidth / 2,
                         midY - bgHeight / 2,
@@ -2486,53 +2987,53 @@
                         bgWidth,
                         bgHeight
                     );
-                    
+
                     // Draw text
                     ctx.fillStyle = `rgba(0, 0, 0, ${textOpacity})`;
                     ctx.fillText(edge.label, midX, midY);
-                    
+
                     // Reset filter effects
                     ctx.filter = 'none';
                 });
             }
-            
+
             drawGrid() {
                 const ctx = this.ctx;
                 const baseGridSize = 50; // Base grid spacing in world coordinates
                 const lineWidth = Math.max(0.5, 1 / this.transform.scale);
-                
+
                 // Calculate visible area in world coordinates
                 const topLeft = this.screenToWorld(0, 0);
                 const bottomRight = this.screenToWorld(this.canvas.width, this.canvas.height);
-                
+
                 // Adaptive grid opacity based on zoom level for better visibility
                 const zoomFactor = this.transform.scale;
                 const minorOpacity = Math.min(0.05, 0.02 + (zoomFactor * 0.01));
                 const majorOpacity = Math.min(0.12, 0.06 + (zoomFactor * 0.02));
-                
+
                 // Multi-level grid system for better visual hierarchy
                 this.drawGridLevel(ctx, baseGridSize, `rgba(0, 0, 0, ${minorOpacity})`, lineWidth * 0.5, topLeft, bottomRight);
                 this.drawGridLevel(ctx, baseGridSize * 5, `rgba(0, 0, 0, ${majorOpacity})`, lineWidth * 1.5, topLeft, bottomRight);
-                
+
                 // Draw origin axes with stronger lines and subtle gradient effect
                 this.drawOriginAxes(ctx, lineWidth, topLeft, bottomRight);
-                
+
                 // Add subtle dot pattern at grid intersections for major grid
                 this.drawGridDots(ctx, baseGridSize * 5, lineWidth, topLeft, bottomRight);
             }
-            
+
             drawGridLevel(ctx, gridSize, strokeStyle, lineWidth, topLeft, bottomRight) {
                 // Calculate grid bounds
                 const startX = Math.floor(topLeft.x / gridSize) * gridSize;
                 const endX = Math.ceil(bottomRight.x / gridSize) * gridSize;
                 const startY = Math.floor(topLeft.y / gridSize) * gridSize;
                 const endY = Math.ceil(bottomRight.y / gridSize) * gridSize;
-                
+
                 // Set grid style
                 ctx.strokeStyle = strokeStyle;
                 ctx.lineWidth = lineWidth;
                 ctx.setLineDash([]);
-                
+
                 // Draw vertical lines
                 for (let x = startX; x <= endX; x += gridSize) {
                     ctx.beginPath();
@@ -2540,7 +3041,7 @@
                     ctx.lineTo(x, endY);
                     ctx.stroke();
                 }
-                
+
                 // Draw horizontal lines
                 for (let y = startY; y <= endY; y += gridSize) {
                     ctx.beginPath();
@@ -2549,17 +3050,17 @@
                     ctx.stroke();
                 }
             }
-            
+
             drawOriginAxes(ctx, lineWidth, topLeft, bottomRight) {
                 const startX = topLeft.x;
                 const endX = bottomRight.x;
                 const startY = topLeft.y;
                 const endY = bottomRight.y;
-                
+
                 // Enhanced origin axes with gradient-like effect
                 ctx.strokeStyle = 'rgba(59, 130, 246, 0.15)';
                 ctx.lineWidth = lineWidth * 3;
-                
+
                 // X-axis
                 if (startY <= 0 && endY >= 0) {
                     ctx.beginPath();
@@ -2567,7 +3068,7 @@
                     ctx.lineTo(endX, 0);
                     ctx.stroke();
                 }
-                
+
                 // Y-axis
                 if (startX <= 0 && endX >= 0) {
                     ctx.beginPath();
@@ -2575,7 +3076,7 @@
                     ctx.lineTo(0, endY);
                     ctx.stroke();
                 }
-                
+
                 // Add subtle center point indicator
                 if (startX <= 0 && endX >= 0 && startY <= 0 && endY >= 0) {
                     ctx.fillStyle = 'rgba(59, 130, 246, 0.2)';
@@ -2584,32 +3085,32 @@
                     ctx.fill();
                 }
             }
-            
+
             drawGridDots(ctx, gridSize, lineWidth, topLeft, bottomRight) {
                 // Only draw dots when zoomed in enough to see them clearly
                 if (this.transform.scale < 0.5) return;
-                
+
                 const startX = Math.floor(topLeft.x / gridSize) * gridSize;
                 const endX = Math.ceil(bottomRight.x / gridSize) * gridSize;
                 const startY = Math.floor(topLeft.y / gridSize) * gridSize;
                 const endY = Math.ceil(bottomRight.y / gridSize) * gridSize;
-                
+
                 const dotRadius = Math.max(0.5, 1.5 / this.transform.scale);
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-                
+
                 // Draw dots at major grid intersections
                 for (let x = startX; x <= endX; x += gridSize) {
                     for (let y = startY; y <= endY; y += gridSize) {
                         // Skip origin point (already drawn)
                         if (x === 0 && y === 0) continue;
-                        
+
                         ctx.beginPath();
                         ctx.arc(x, y, dotRadius, 0, 2 * Math.PI);
                         ctx.fill();
                     }
                 }
             }
-            
+
             // Utility method to convert screen coordinates to world coordinates
             screenToWorld(screenX, screenY) {
                 return {
@@ -2617,7 +3118,7 @@
                     y: (screenY - this.transform.y) / this.transform.scale
                 };
             }
-            
+
             // Utility method to convert world coordinates to screen coordinates
             worldToScreen(worldX, worldY) {
                 return {
@@ -2625,7 +3126,7 @@
                     y: worldY * this.transform.scale + this.transform.y
                 };
             }
-            
+
             // Node interaction methods
             getNodeAtPosition(worldX, worldY) {
                 // Get nodes from current graph data or test data
@@ -2636,67 +3137,67 @@
                     // Use test nodes if no graph data available
                     nodes = [
                         {
-                            id: 'origin', 
-                            x: 0, y: 0, 
-                            type: 'anchor', 
-                            label: 'Origin', 
+                            id: 'origin',
+                            x: 0, y: 0,
+                            type: 'anchor',
+                            label: 'Origin',
                             anchor: true
                         },
                         {
-                            id: 'processor', 
-                            x: 120, y: 60, 
-                            type: 'computation', 
-                            label: 'Processor', 
+                            id: 'processor',
+                            x: 120, y: 60,
+                            type: 'computation',
+                            label: 'Processor',
                             anchor: false
                         },
                         {
-                            id: 'database', 
-                            x: -90, y: 140, 
-                            type: 'storage', 
-                            label: 'Database', 
+                            id: 'database',
+                            x: -90, y: 140,
+                            type: 'storage',
+                            label: 'Database',
                             anchor: false
                         },
                         {
-                            id: 'api', 
-                            x: 180, y: -120, 
-                            type: 'service', 
-                            label: 'API Gateway', 
+                            id: 'api',
+                            x: 180, y: -120,
+                            type: 'service',
+                            label: 'API Gateway',
                             anchor: false
                         },
                         {
-                            id: 'cache', 
-                            x: -140, y: -90, 
-                            type: 'storage', 
-                            label: 'Cache', 
+                            id: 'cache',
+                            x: -140, y: -90,
+                            type: 'storage',
+                            label: 'Cache',
                             anchor: false
                         },
                         {
-                            id: 'monitor', 
-                            x: 60, y: -180, 
-                            type: 'analytics', 
-                            label: 'Monitor', 
+                            id: 'monitor',
+                            x: 60, y: -180,
+                            type: 'analytics',
+                            label: 'Monitor',
                             anchor: false
                         },
                         {
-                            id: 'queue', 
-                            x: -60, y: 180, 
-                            type: 'messaging', 
-                            label: 'Message Queue', 
+                            id: 'queue',
+                            x: -60, y: 180,
+                            type: 'messaging',
+                            label: 'Message Queue',
                             anchor: false
                         },
                         {
-                            id: 'auth', 
-                            x: 200, y: 80, 
-                            type: 'security', 
-                            label: 'Auth Service', 
+                            id: 'auth',
+                            x: 200, y: 80,
+                            type: 'security',
+                            label: 'Auth Service',
                             anchor: false
                         }
                     ];
                 }
-                
+
                 // Check nodes in reverse z-order (top to bottom) for proper layering
                 const orderedNodes = this.getNodesInZOrder(nodes);
-                
+
                 const fontSize = Math.max(10, 12 / this.transform.scale);
                 const padding = 3 / this.transform.scale;
 
@@ -2741,7 +3242,7 @@
 
                 return null;
             }
-            
+
             getNodesInZOrder(nodes) {
                 // If we have a z-order array, use it to sort nodes
                 if (this.nodeZOrder.length > 0) {
@@ -2749,7 +3250,7 @@
                     this.nodeZOrder.forEach((nodeId, index) => {
                         zOrderMap[nodeId] = index;
                     });
-                    
+
                     return [...nodes].sort((a, b) => {
                         const aOrder = zOrderMap[a.id] !== undefined ? zOrderMap[a.id] : -1;
                         const bOrder = zOrderMap[b.id] !== undefined ? zOrderMap[b.id] : -1;
@@ -2761,17 +3262,17 @@
                     return [...nodes];
                 }
             }
-            
+
             bringNodeToFront(node) {
                 // Remove node from current position in z-order
                 const nodeIndex = this.nodeZOrder.indexOf(node.id);
                 if (nodeIndex > -1) {
                     this.nodeZOrder.splice(nodeIndex, 1);
                 }
-                
+
                 // Add node to the end (front) of z-order
                 this.nodeZOrder.push(node.id);
-                
+
                 // Ensure z-order doesn't grow indefinitely
                 if (this.nodeZOrder.length > 100) {
                     this.nodeZOrder = this.nodeZOrder.slice(-50);
@@ -2867,7 +3368,7 @@
                     lines.forEach((line, i) => {
                         const text = document.createElementNS(svgns, "text");
                         text.setAttribute("x", node.x);
-                        text.setAttribute("y", node.y + (i - (lines.length-1)/2) * 16);
+                        text.setAttribute("y", node.y + (i - (lines.length - 1) / 2) * 16);
                         text.setAttribute("font-size", "14");
                         text.setAttribute("text-anchor", "middle");
                         text.setAttribute("fill", "#222");
@@ -3090,7 +3591,7 @@
                             y: height - (node.y + 60),
                             width: 120,
                             height: 120,
-                            color: rgb(239/255, 68/255, 68/255),
+                            color: rgb(239 / 255, 68 / 255, 68 / 255),
                             opacity: 0.8,
                             borderColor: rgb(0, 0, 0),
                             borderWidth: 3,
@@ -3257,7 +3758,7 @@
                     y: anchorBoxY,
                     width: 18,
                     height: 18,
-                    color: rgb(239/255, 68/255, 68/255),
+                    color: rgb(239 / 255, 68 / 255, 68 / 255),
                     opacity: 0.8,
                     borderColor: rgb(0.73, 0.73, 0.73),
                     borderWidth: 1,
@@ -3512,10 +4013,10 @@
                 this.setupLegend();
                 this.setupControls();
             }
-            
+
             setupLegend() {
                 const legendContent = document.getElementById('legend-content');
-                
+
                 // Check if we have predefined legend data
                 if (GRAPH_DATA.legend && (GRAPH_DATA.legend.nodeTypes.length > 0 || GRAPH_DATA.legend.edgeTypes.length > 0)) {
                     // Use predefined legend data and populate StyleManager with those colors
@@ -3532,111 +4033,111 @@
                     `;
                 }
             }
-            
+
             setupPredefinedLegend(legendContent) {
                 legendContent.innerHTML = '';
-                
+
                 // Node types section
                 if (GRAPH_DATA.legend.nodeTypes.length > 0) {
                     const nodeSection = document.createElement('div');
                     nodeSection.className = 'legend-section';
-                    
+
                     const header = document.createElement('h4');
                     header.textContent = 'Node Types';
                     nodeSection.appendChild(header);
-                    
+
                     GRAPH_DATA.legend.nodeTypes.forEach(nodeType => {
                         const item = document.createElement('div');
                         item.className = 'legend-item';
-                        
+
                         const colorBox = document.createElement('div');
                         colorBox.className = 'legend-color';
                         colorBox.style.backgroundColor = nodeType.color;
-                        
+
                         const label = document.createElement('span');
                         label.textContent = nodeType.label;
-                        
+
                         item.appendChild(colorBox);
                         item.appendChild(label);
                         nodeSection.appendChild(item);
-                        
+
                         // Populate StyleManager with predefined colors
                         if (window.styleManager) {
                             window.styleManager.nodeTypeColors.set(nodeType.label, nodeType.color);
                             window.styleManager.discoveredNodeTypes.add(nodeType.label);
                         }
                     });
-                    
+
                     legendContent.appendChild(nodeSection);
                 }
-                
+
                 // Edge types section
                 if (GRAPH_DATA.legend.edgeTypes.length > 0) {
                     const edgeSection = document.createElement('div');
                     edgeSection.className = 'legend-section';
-                    
+
                     const header = document.createElement('h4');
                     header.textContent = 'Edge Types';
                     edgeSection.appendChild(header);
-                    
+
                     GRAPH_DATA.legend.edgeTypes.forEach(edgeType => {
                         const item = document.createElement('div');
                         item.className = 'legend-item';
-                        
+
                         const colorBox = document.createElement('div');
                         colorBox.className = 'legend-color';
                         colorBox.style.backgroundColor = edgeType.color;
-                        
+
                         const label = document.createElement('span');
                         label.textContent = edgeType.label;
-                        
+
                         item.appendChild(colorBox);
                         item.appendChild(label);
                         edgeSection.appendChild(item);
-                        
+
                         // Populate StyleManager with predefined colors
                         if (window.styleManager) {
                             window.styleManager.edgeTypeColors.set(edgeType.label, edgeType.color);
                             window.styleManager.discoveredEdgeTypes.add(edgeType.label);
                         }
                     });
-                    
+
                     legendContent.appendChild(edgeSection);
                 }
-                
+
                 // Always add anchor nodes section
                 const anchorSection = document.createElement('div');
                 anchorSection.className = 'legend-section';
-                
+
                 const header = document.createElement('h4');
                 header.textContent = 'Special Nodes';
                 anchorSection.appendChild(header);
-                
+
                 const item = document.createElement('div');
                 item.className = 'legend-item';
-                
+
                 const colorBox = document.createElement('div');
                 colorBox.className = 'legend-shape';
                 colorBox.style.backgroundColor = 'rgba(239, 68, 68, 0.8)';
                 colorBox.style.borderRadius = '2px';
-                
+
                 const label = document.createElement('span');
                 label.textContent = 'Anchor Nodes';
-                
+
                 item.appendChild(colorBox);
                 item.appendChild(label);
                 anchorSection.appendChild(item);
-                
+
                 legendContent.appendChild(anchorSection);
             }
-            
+
             setupControls() {
                 // Initialize labels as enabled by default
                 window.labelsEnabled = true;
-                
+
                 // Label toggle functionality
                 const labelToggle = document.getElementById('label-toggle');
-                labelToggle.addEventListener('change', function() {
+                labelToggle.addEventListener('change', function () {
                     window.labelsEnabled = this.checked;
                     // Trigger re-render to show/hide labels
                     if (window.canvasNavigator) {
@@ -3644,36 +4145,104 @@
                     }
                     console.log('Labels', this.checked ? 'enabled' : 'disabled');
                 });
-                
+
                 // Initialize export manager
                 const canvas = document.getElementById('graph-canvas');
                 window.exportManager = new ExportManager(canvas);
-                
+
                 // Export functionality
-                document.getElementById('export-pdf').addEventListener('click', function() {
+                document.getElementById('export-pdf').addEventListener('click', function () {
                     window.exportManager.exportToPDF();
                 });
-                
-                document.getElementById('export-svg').addEventListener('click', function() {
+
+                document.getElementById('export-svg').addEventListener('click', function () {
                     window.exportManager.exportHighQualityPNG();
                 });
             }
-            
+
             updateGraphStats(nodeCount, edgeCount, density) {
                 const statsElement = document.getElementById('graph-stats');
                 const typeStats = window.styleManager ? window.styleManager.getTypeStatistics() : {};
                 const nodeTypeCount = typeStats.nodeTypeCount || 0;
                 const edgeTypeCount = typeStats.edgeTypeCount || 0;
-                
+
                 statsElement.textContent = `${nodeCount} nodes (${nodeTypeCount} types), ${edgeCount} edges (${edgeTypeCount} types)`;
             }
         }
 
         // Initialize canvas and set up navigation system
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
+            // Theme Management
+            const themeToggle = document.getElementById('theme-toggle');
+            const html = document.documentElement;
+
+            // Load saved theme from localStorage or default to dark (matching annotation tool)
+            const savedTheme = localStorage.getItem('neural-miner-theme') || 'dark';
+            if (savedTheme === 'dark') {
+                html.classList.add('dark');
+                themeToggle.textContent = '🌙';
+            } else {
+                html.classList.remove('dark');
+                themeToggle.textContent = '☀️';
+            }
+
+            // Theme toggle event listener
+            themeToggle.addEventListener('click', function() {
+                const isDark = html.classList.contains('dark');
+                if (isDark) {
+                    html.classList.remove('dark');
+                    themeToggle.textContent = '☀️';
+                    localStorage.setItem('neural-miner-theme', 'light');
+                } else {
+                    html.classList.add('dark');
+                    themeToggle.textContent = '🌙';
+                    localStorage.setItem('neural-miner-theme', 'dark');
+                }
+                // Redraw canvas with new theme colors
+                if (window.canvasNavigator) {
+                    window.canvasNavigator.render();
+                }
+            });
+
+            // Listen for theme changes from other windows/tabs/iframes
+            window.addEventListener('storage', function(e) {
+                if (e.key === 'neural-miner-theme' && e.newValue) {
+                    const newTheme = e.newValue;
+                    if (newTheme === 'dark') {
+                        html.classList.add('dark');
+                        themeToggle.textContent = '🌙';
+                    } else {
+                        html.classList.remove('dark');
+                        themeToggle.textContent = '☀️';
+                    }
+                    // Redraw canvas with new theme colors
+                    if (window.canvasNavigator) {
+                        window.canvasNavigator.render();
+                    }
+                }
+            });
+
+            // Listen for theme change messages from parent window
+            window.addEventListener('message', function(e) {
+                if (e.data && e.data.type === 'theme-change') {
+                    const newTheme = e.data.theme;
+                    if (newTheme === 'dark') {
+                        html.classList.add('dark');
+                        themeToggle.textContent = '🌙';
+                    } else {
+                        html.classList.remove('dark');
+                        themeToggle.textContent = '☀️';
+                    }
+                    // Redraw canvas with new theme colors
+                    if (window.canvasNavigator) {
+                        window.canvasNavigator.render();
+                    }
+                }
+            });
+
             const canvas = document.getElementById('graph-canvas');
             const ctx = canvas.getContext('2d');
-            
+
             // Set canvas size to full window
             function resizeCanvas() {
                 canvas.width = window.innerWidth;
@@ -3682,23 +4251,23 @@
                     window.canvasNavigator.render();
                 }
             }
-            
+
             resizeCanvas();
             window.addEventListener('resize', resizeCanvas);
-            
+
             // Initialize style manager
             window.styleManager = new StyleManager();
 
             // Initialize layout engine
             window.layoutEngine = new GraphLayoutEngine();
-            window.labelsEnabled = true;            
-            
+            window.labelsEnabled = true;
+
             window.uiManager = new UIManager();
             // Apply initial layout and discover types if graph data exists
             if (GRAPH_DATA && GRAPH_DATA.nodes && GRAPH_DATA.nodes.length > 0) {
                 window.styleManager.discoverTypes(GRAPH_DATA.nodes, GRAPH_DATA.edges);
                 // window.layoutEngine.generateInitialLayout(GRAPH_DATA.nodes, GRAPH_DATA.edges);
-                window.layoutEngine.generateConcentricLayout(GRAPH_DATA.nodes, GRAPH_DATA.edges);
+                // window.layoutEngine.generateConcentricLayout(GRAPH_DATA.nodes, GRAPH_DATA.edges);
 
                 // --- Center the graph by shifting node positions ---
                 // Compute bounding box of all nodes
@@ -3732,32 +4301,33 @@
 
                 // No need to set window.initialTransform for centering
             }
-            
+
             // Initialize navigation system
             window.canvasNavigator = new CanvasNavigator(canvas, ctx);
-            
+
             // Update title and stats
             document.getElementById('graph-title').textContent = GRAPH_DATA.metadata.title;
-            
+
             // Update stats with type information
             if (window.uiManager) {
                 window.uiManager.updateGraphStats(
-                    GRAPH_DATA.metadata.nodeCount, 
-                    GRAPH_DATA.metadata.edgeCount, 
+                    GRAPH_DATA.metadata.nodeCount,
+                    GRAPH_DATA.metadata.edgeCount,
                     GRAPH_DATA.metadata.density
                 );
             } else {
-                document.getElementById('graph-stats').textContent = 
+                document.getElementById('graph-stats').textContent =
                     `${GRAPH_DATA.metadata.nodeCount} nodes, ${GRAPH_DATA.metadata.edgeCount} edges`;
             }
-            
+
             // Hide context menu on click outside
-            document.addEventListener('click', function() {
+            document.addEventListener('click', function () {
                 document.getElementById('context-menu').classList.add('hidden');
             });
-            
+
             console.log('Interactive Graph Visualizer with navigation system and UI components loaded successfully');
         });
     </script>
 </body>
+
 </html>

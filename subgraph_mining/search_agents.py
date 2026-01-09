@@ -390,9 +390,14 @@ class GreedySearchAgent(SearchAgent):
         
         args_for_pool = range(n_trials)
 
-        print(f"Starting {n_trials} search trials on {self.n_workers} cores...")
-        with mp.Pool(processes=self.n_workers, initializer=init_greedy_worker, initargs=init_args) as pool:
-            results = list(tqdm(pool.imap_unordered(run_greedy_trial, args_for_pool), total=n_trials))
+        if self.n_workers > 1:
+            print(f"Starting {n_trials} search trials on {self.n_workers} cores...")
+            with mp.Pool(processes=self.n_workers, initializer=init_greedy_worker, initargs=init_args) as pool:
+                results = list(tqdm(pool.imap_unordered(run_greedy_trial, args_for_pool), total=n_trials))
+        else:
+            print(f"Starting {n_trials} search trials sequentially (n_workers={self.n_workers})...")
+            init_greedy_worker(*init_args)
+            results = [run_greedy_trial(i) for i in tqdm(range(n_trials))]
 
         print("Aggregating results from all worker processes...")
         for trial_patterns, trial_counts in results:

@@ -9,6 +9,35 @@ import os
 import re
 import logging
 import os
+import shutil
+
+def clear_visualizations(output_dir="plots/cluster", mode="flat"):
+    """
+    Clears old visualizations from the output directory to ensure consistency.
+    
+    Args:
+        output_dir: The directory containing the visualizations.
+        mode: "flat" to remove folders (size_X_rank_Y), "folder" to remove flat HTML files.
+    """
+    if not os.path.exists(output_dir):
+        return
+        
+    for item in os.listdir(output_dir):
+        item_path = os.path.join(output_dir, item)
+        if mode == "flat":
+            # Clear structured folders when switching to flat mode
+            if os.path.isdir(item_path) and item.startswith("size_") and "_rank_" in item:
+                try:
+                    shutil.rmtree(item_path)
+                except Exception as e:
+                    print(f"Failed to remove folder {item_path}: {e}")
+        elif mode == "folder":
+            # Clear flat descriptive files when switching to folder mode
+            if os.path.isfile(item_path) and item.endswith("_interactive.html"):
+                try:
+                    os.remove(item_path)
+                except Exception as e:
+                    print(f"Failed to remove file {item_path}: {e}")
 
 class GraphDataExtractor:
     """
@@ -483,8 +512,6 @@ class HTMLTemplateProcessor:
             # Convert graph data to JSON with proper formatting
             json_data = json.dumps(graph_data, indent=8, ensure_ascii=False)
             
-            # Find the GRAPH_DATA placeholder and replace it
-            # Look for the pattern: const GRAPH_DATA = { ... };
             import re
             
             # Pattern to match the GRAPH_DATA assignment
@@ -497,14 +524,13 @@ class HTMLTemplateProcessor:
             if re.search(pattern, template_content, re.DOTALL):
                 injected_content = re.sub(pattern, replacement, template_content, flags=re.DOTALL)
             else:
-                # Fallback: look for simpler pattern
+                
                 simple_pattern = r'const GRAPH_DATA\s*=\s*[^;]+;'
                 if re.search(simple_pattern, template_content, re.DOTALL):
                     injected_content = re.sub(simple_pattern, replacement, template_content, flags=re.DOTALL)
                 else:
                     raise RuntimeError("Could not find GRAPH_DATA placeholder in template")
             
-            # Verify injection was successful
             if 'const GRAPH_DATA' not in injected_content:
                 raise RuntimeError("Data injection failed - GRAPH_DATA not found in result")
                 
@@ -528,7 +554,7 @@ class HTMLTemplateProcessor:
         metadata = graph_data['metadata']
         
         try:
-            # Extract characteristics for filename generation
+            
             node_count = metadata.get('nodeCount', 0)
             edge_count = metadata.get('edgeCount', 0)
             is_directed = metadata.get('isDirected', False)
@@ -638,17 +664,13 @@ class HTMLTemplateProcessor:
         Complete template processing workflow: read, inject, and write.
         """
         try:
-            # Step 1: Read template file
+            
             template_content = self.read_template()
-            
-            # Step 2: Inject graph data
-            injected_content = self.inject_graph_data(template_content, graph_data)
-            
-            # Step 3: Generate filename if not provided
+            injected_content = self.inject_graph_data(template_content, graph_data) 
             if output_filename is None:
                 output_filename = self.generate_filename(graph_data)
             
-            # Step 4: Write HTML file
+
             output_path = self.write_html_file(injected_content, output_filename, output_dir)
             
             return output_path
@@ -666,9 +688,9 @@ def process_html_template(graph_data: Dict[str, Any],
     processor = HTMLTemplateProcessor(template_path)
     return processor.process_template(graph_data, output_filename, output_dir)
 
-def visualize_pattern_graph_ext(pattern, args, count_by_size):
+def visualize_pattern_graph_ext(pattern, args, count_by_size, pattern_key=None):
     """
-    Main visualizer integration function matching existing API signature.
+    Main visualizer integration function matchin existing API signature.
     """
     import logging
     
@@ -701,6 +723,11 @@ def visualize_pattern_graph_ext(pattern, args, count_by_size):
         try:
             extractor = GraphDataExtractor()
             graph_data = extractor.extract_graph_data(pattern)
+            
+            # Add pattern_key to metadata if provided
+            if pattern_key:
+                graph_data['metadata']['pattern_key'] = pattern_key
+                
             logger.info("Graph data extraction completed successfully")
         except Exception as e:
             logger.error(f"Graph data extraction failed: {str(e)}")
@@ -722,6 +749,9 @@ def visualize_pattern_graph_ext(pattern, args, count_by_size):
             output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "plots/cluster"))
             output_dir = os.path.abspath(output_dir)
             os.makedirs(output_dir, exist_ok=True)
+            
+            # Cleanup structured folders when in flat mode
+            clear_visualizations(output_dir, mode="flat")
 
             template_path = os.path.join(os.path.dirname(__file__), "template.html")
             processor = HTMLTemplateProcessor(template_path)
@@ -793,38 +823,39 @@ def _generate_pattern_filename(pattern: nx.Graph, count_by_size: Dict[int, int])
         # Build filename components
         components = []
         
-        # Graph type
+        # 1. Graph type (dir/undir)
         graph_type = "dir" if pattern.is_directed() else "undir"
         components.append(graph_type)
         
-        # Node and occurrence count
-        occurrence_count = count_by_size.get(num_nodes, 1) if count_by_size else 1
-        components.append(f"{num_nodes}-{occurrence_count}")
+        # 2. Size and Rank (size-rank)
+        # count_by_size is used as {size: rank} when called from decoder
+        rank = count_by_size.get(num_nodes, 1) if count_by_size else 1
+        components.append(f"{num_nodes}-{rank}")
         
-        # Node types
+        # 3. Node types
         node_types = sorted(set(
-            pattern.nodes[n].get('label', '') 
+            str(pattern.nodes[n].get('label', ''))
             for n in pattern.nodes() 
             if pattern.nodes[n].get('label', '')
         ))
         if node_types:
             components.append('nodes-' + '-'.join(node_types))
         
-        # Edge types
+        # 4. Edge types (simplified for naming)
         edge_types = sorted(set(
-            data.get('type', '') 
+            str(data.get('type', ''))
             for u, v, data in pattern.edges(data=True) 
             if data.get('type', '')
         ))
         if edge_types:
             components.append('edges-' + '-'.join(edge_types))
         
-        # Anchor nodes
+        # 5. Anchor nodes
         has_anchors = any(pattern.nodes[n].get('anchor', 0) == 1 for n in pattern.nodes())
         if has_anchors:
             components.append('anchored')
         
-        # Density category
+        # 6. Density category
         if edge_density > 0.5:
             components.append('very-dense')
         elif edge_density > 0.3:
@@ -832,13 +863,11 @@ def _generate_pattern_filename(pattern: nx.Graph, count_by_size: Dict[int, int])
         else:
             components.append('sparse')
         
-        # Interactive indicator
+        # 7. Interactive indicator
         components.append('interactive')
         
-        # Join components
+        # Join components and sanitize
         filename = '_'.join(components)
-        
-        # Sanitize filename
         filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
         filename = re.sub(r'_+', '_', filename)
         
@@ -896,8 +925,20 @@ def visualize_all_pattern_instances(pattern_instances, pattern_key, count, outpu
         pattern_dir = os.path.join(output_dir, pattern_key)
         os.makedirs(pattern_dir, exist_ok=True)
 
-        logger.info(f"Visualizing {pattern_key}")
-
+        logger.info(f"Visualizing {pattern_key} (visualize_instances={visualize_instances})")
+        
+        # Cleanup pattern directory to remove stale instance files
+        if os.path.exists(pattern_dir):
+            import shutil
+            for item in os.listdir(pattern_dir):
+                item_path = os.path.join(pattern_dir, item)
+                if os.path.isfile(item_path) and item.startswith("instance_") and item.endswith(".html"):
+                    try:
+                        os.remove(item_path)
+                        # logger.debug(f"  Removed stale instance file: {item}")
+                    except Exception as e:
+                        logger.warning(f"  Failed to remove stale file {item_path}: {e}")
+        
         template_path = os.path.join(os.path.dirname(__file__), "template.html")
         if not os.path.exists(template_path):
             logger.error(f"Template not found: {template_path}")
@@ -927,6 +968,7 @@ def visualize_all_pattern_instances(pattern_instances, pattern_key, count, outpu
                 anchor_info = " with Anchors" if has_anchors else ""
 
                 representative_data['metadata']['title'] = f"{graph_type} Pattern ({num_nodes} nodes, {num_edges} edges){anchor_info}"
+                representative_data['metadata']['pattern_key'] = pattern_key
 
                 representative_path = processor.process_template(
                     graph_data=representative_data,
@@ -940,13 +982,23 @@ def visualize_all_pattern_instances(pattern_instances, pattern_key, count, outpu
 
         success_count = 0
 
+        # Find representative index to avoid duplication
+        representative_idx = -1
+        if representative:
+             for idx, pattern in enumerate(pattern_instances):
+                 if pattern is representative:
+                     representative_idx = idx
+                     break
+
         # Only visualize instances if the flag is set
         if visualize_instances:
             for idx, pattern in enumerate(pattern_instances):
+
                 try:
                     graph_data = extractor.extract_graph_data(pattern)
 
                     graph_data['metadata']['title'] = f"{pattern_key} - Instance {idx+1}/{count}"
+                    graph_data['metadata']['pattern_key'] = pattern_key
 
                     filename = f"instance_{idx+1:04d}.html"
 
@@ -969,7 +1021,8 @@ def visualize_all_pattern_instances(pattern_instances, pattern_key, count, outpu
 
         _create_pattern_index_html(pattern_key, count, pattern_dir,
                                    has_representative=(representative_data is not None),
-                                   has_instances=visualize_instances)
+                                   has_instances=visualize_instances,
+                                   representative_idx=representative_idx)
 
         if visualize_instances:
             logger.info(f"✓ Successfully created representative + {success_count}/{count} instance visualizations in {pattern_dir}")
@@ -983,15 +1036,51 @@ def visualize_all_pattern_instances(pattern_instances, pattern_key, count, outpu
         return False
 
 
-def _create_pattern_index_html(pattern_key, count, pattern_dir, has_representative=False, has_instances=False):
+def _create_pattern_index_html(pattern_key, count, pattern_dir, has_representative=False, has_instances=False, representative_idx=-1):
     """Create an index.html to browse all instances of a pattern with tabs for representative and instances."""
     html_content = f"""<!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{pattern_key} - Pattern Overview</title>
     <style>
+        :root {{
+            /* Light Theme (matching annotation tool) */
+            --bg-primary: oklch(0.96 0 0);
+            --bg-secondary: oklch(0.97 0 0);
+            --border-light: oklch(0.86 0 0);
+            --text-primary: oklch(0.32 0 0);
+            --text-secondary: oklch(0.51 0 0);
+            --card-bg: oklch(0.97 0 0);
+            --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --card-border: oklch(0.86 0 0);
+            --primary: oklch(0.21 0.006 285.885);
+            --primary-foreground: oklch(0.985 0 0);
+            --accent: oklch(0.81 0 0);
+            --hover-bg: oklch(0.98 0 0);
+            --button-bg: white;
+            --button-hover: oklch(0.96 0 0);
+        }}
+
+        /* Dark Theme (matching annotation tool) */
+        .dark {{
+            --bg-primary: oklch(0.22 0 0);
+            --bg-secondary: oklch(0.24 0 0);
+            --border-light: oklch(0.33 0 0);
+            --text-primary: oklch(0.89 0 0);
+            --text-secondary: oklch(0.6 0 0);
+            --card-bg: oklch(0.24 0 0);
+            --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+            --card-border: oklch(0.33 0 0);
+            --primary: oklch(0.92 0.004 286.32);
+            --primary-foreground: oklch(0.21 0.006 285.885);
+            --accent: oklch(0.37 0 0);
+            --hover-bg: oklch(0.29 0 0);
+            --button-bg: oklch(0.31 0 0);
+            --button-hover: oklch(0.37 0 0);
+        }}
+
         * {{
             margin: 0;
             padding: 0;
@@ -1000,36 +1089,65 @@ def _create_pattern_index_html(pattern_key, count, pattern_dir, has_representati
 
         body {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #fafafa;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            transition: background-color 0.3s, color 0.3s;
         }}
 
         .header {{
-            background: white;
+            background: var(--card-bg);
             padding: 20px;
-            border-bottom: 2px solid #e5e7eb;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border-bottom: 2px solid var(--border-light);
+            box-shadow: var(--card-shadow);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+
+        .header-content {{
+            flex: 1;
         }}
 
         h1 {{
-            color: #111827;
+            color: var(--text-primary);
             font-size: 24px;
             margin-bottom: 8px;
         }}
 
         .subtitle {{
-            color: #6b7280;
+            color: var(--text-secondary);
             font-size: 14px;
+        }}
+
+        #theme-toggle {{
+            width: 40px;
+            height: 40px;
+            border: 1px solid var(--border-light);
+            border-radius: 6px;
+            background: var(--button-bg);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }}
+
+        #theme-toggle:hover {{
+            background: var(--button-hover);
+            border-color: var(--text-secondary);
         }}
 
         /* Tabs */
         .tabs {{
             display: {'flex' if has_instances else 'none'};
-            background: white;
-            border-bottom: 1px solid #e5e7eb;
+            background: var(--card-bg);
+            border-bottom: 1px solid var(--border-light);
             position: sticky;
             top: 0;
             z-index: 100;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            box-shadow: var(--card-shadow);
         }}
 
         .tab {{
@@ -1038,20 +1156,20 @@ def _create_pattern_index_html(pattern_key, count, pattern_dir, has_representati
             border-bottom: 2px solid transparent;
             transition: all 0.2s;
             font-weight: 500;
-            color: #6b7280;
+            color: var(--text-secondary);
             background: none;
             border: none;
             font-size: 15px;
         }}
 
         .tab:hover {{
-            background: #f9fafb;
-            color: #111827;
+            background: var(--hover-bg);
+            color: var(--text-primary);
         }}
 
         .tab.active {{
-            color: #2563eb;
-            border-bottom-color: #2563eb;
+            color: var(--primary);
+            border-bottom-color: var(--primary);
         }}
 
         /* Tab content */
@@ -1075,7 +1193,7 @@ def _create_pattern_index_html(pattern_key, count, pattern_dir, has_representati
             width: 100%;
             height: 100%;
             border: none;
-            background: white;
+            background: var(--card-bg);
         }}
 
         /* Instances grid */
@@ -1085,14 +1203,15 @@ def _create_pattern_index_html(pattern_key, count, pattern_dir, has_representati
         }}
 
         .stats {{
-            background: white;
+            background: var(--card-bg);
             padding: 20px;
             border-radius: 8px;
             margin-bottom: 24px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            box-shadow: var(--card-shadow);
             display: flex;
             gap: 32px;
             align-items: center;
+            border: 1px solid var(--border-light);
         }}
 
         .stat-item {{
@@ -1101,7 +1220,7 @@ def _create_pattern_index_html(pattern_key, count, pattern_dir, has_representati
         }}
 
         .stat-label {{
-            color: #6b7280;
+            color: var(--text-secondary);
             font-size: 13px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
@@ -1109,7 +1228,7 @@ def _create_pattern_index_html(pattern_key, count, pattern_dir, has_representati
         }}
 
         .stat-value {{
-            color: #111827;
+            color: var(--text-primary);
             font-size: 24px;
             font-weight: 700;
         }}
@@ -1121,42 +1240,47 @@ def _create_pattern_index_html(pattern_key, count, pattern_dir, has_representati
         }}
 
         .instance-card {{
-            background: white;
-            border: 2px solid #e5e7eb;
+            background: var(--card-bg);
+            border: 2px solid var(--border-light);
             border-radius: 8px;
             padding: 20px;
             text-align: center;
             transition: all 0.2s;
             cursor: pointer;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            box-shadow: var(--card-shadow);
         }}
 
         .instance-card:hover {{
-            box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
             transform: translateY(-4px);
-            border-color: #2563eb;
+            border-color: var(--primary);
         }}
 
         .instance-card a {{
             text-decoration: none;
-            color: #2563eb;
+            color: var(--primary);
             font-weight: 600;
             font-size: 16px;
             display: block;
         }}
 
         .instance-number {{
-            color: #9ca3af;
+            color: var(--text-secondary);
             font-size: 13px;
             margin-top: 8px;
             font-family: 'Courier New', monospace;
         }}
 
+        .instance-card.representative {{
+            border-color: var(--primary);
+            background: var(--accent);
+        }}
+
         /* No representative message */
         .no-representative {{
-            background: #fef3c7;
-            border: 1px solid #fbbf24;
-            color: #92400e;
+            background: var(--accent);
+            border: 1px solid var(--border-light);
+            color: var(--text-primary);
             padding: 16px;
             border-radius: 8px;
             margin: 20px auto;
@@ -1167,8 +1291,11 @@ def _create_pattern_index_html(pattern_key, count, pattern_dir, has_representati
 </head>
 <body>
     <div class="header">
-        <h1>{pattern_key}</h1>
-        <div class="subtitle">Pattern Discovery and Analysis{' - Representative Only' if not has_instances else ''}</div>
+        <div class="header-content">
+            <h1>{pattern_key}</h1>
+            <div class="subtitle">Pattern Discovery and Analysis{' - Representative Only' if not has_instances else ''}</div>
+        </div>
+        <button id="theme-toggle" title="Toggle Dark/Light Mode">🌙</button>
     </div>
 """
 
@@ -1226,9 +1353,15 @@ def _create_pattern_index_html(pattern_key, count, pattern_dir, has_representati
 """
 
         for i in range(1, count + 1):
+            href = f"instance_{i:04d}.html"
+            is_rep = False
+            
+            if (i - 1) == representative_idx:
+                is_rep = True
+
             html_content += f"""
-                <div class="instance-card">
-                    <a href="instance_{i:04d}.html" target="_blank">Instance {i}</a>
+                <div class="instance-card{' representative' if is_rep else ''}">
+                    <a href="{href}" target="_blank">Instance {i} {' (Rep)' if is_rep else ''}</a>
                     <div class="instance-number">#{i:04d}</div>
                 </div>
 """
@@ -1239,31 +1372,90 @@ def _create_pattern_index_html(pattern_key, count, pattern_dir, has_representati
     </div>
 """
 
+    # Add theme switching script (always needed)
+    html_content += """
+    <script>
+        // Theme Management
+        document.addEventListener('DOMContentLoaded', function() {
+            const themeToggle = document.getElementById('theme-toggle');
+            const html = document.documentElement;
+
+            // Load saved theme from localStorage or default to dark (matching annotation tool)
+            const savedTheme = localStorage.getItem('neural-miner-theme') || 'dark';
+            if (savedTheme === 'dark') {
+                html.classList.add('dark');
+                themeToggle.textContent = '🌙';
+            } else {
+                html.classList.remove('dark');
+                themeToggle.textContent = '☀️';
+            }
+
+            // Theme toggle event listener
+            themeToggle.addEventListener('click', function() {
+                const isDark = html.classList.contains('dark');
+                const newTheme = isDark ? 'light' : 'dark';
+
+                if (isDark) {
+                    html.classList.remove('dark');
+                    themeToggle.textContent = '☀️';
+                    localStorage.setItem('neural-miner-theme', 'light');
+                } else {
+                    html.classList.add('dark');
+                    themeToggle.textContent = '🌙';
+                    localStorage.setItem('neural-miner-theme', 'dark');
+                }
+
+                // Notify iframe to update theme
+                const iframe = document.querySelector('.representative-frame');
+                if (iframe && iframe.contentWindow) {
+                    iframe.contentWindow.postMessage({
+                        type: 'theme-change',
+                        theme: newTheme
+                    }, '*');
+                }
+            });
+
+            // Listen for theme changes from other windows/tabs/iframes
+            window.addEventListener('storage', function(e) {
+                if (e.key === 'neural-miner-theme' && e.newValue) {
+                    const newTheme = e.newValue;
+                    if (newTheme === 'dark') {
+                        html.classList.add('dark');
+                        themeToggle.textContent = '🌙';
+                    } else {
+                        html.classList.remove('dark');
+                        themeToggle.textContent = '☀️';
+                    }
+                }
+            });
+"""
+
     # Only add tab switching script if we have tabs
     if has_instances:
         html_content += """
-    <script>
-        function openTab(evt, tabName) {
-            // Hide all tab contents
-            const tabContents = document.getElementsByClassName('tab-content');
-            for (let i = 0; i < tabContents.length; i++) {
-                tabContents[i].classList.remove('active');
-            }
+            // Tab Switching
+            window.openTab = function(evt, tabName) {
+                // Hide all tab contents
+                const tabContents = document.getElementsByClassName('tab-content');
+                for (let i = 0; i < tabContents.length; i++) {
+                    tabContents[i].classList.remove('active');
+                }
 
-            // Remove active class from all tabs
-            const tabs = document.getElementsByClassName('tab');
-            for (let i = 0; i < tabs.length; i++) {
-                tabs[i].classList.remove('active');
-            }
+                // Remove active class from all tabs
+                const tabs = document.getElementsByClassName('tab');
+                for (let i = 0; i < tabs.length; i++) {
+                    tabs[i].classList.remove('active');
+                }
 
-            // Show the selected tab content and mark tab as active
-            document.getElementById(tabName).classList.add('active');
-            evt.currentTarget.classList.add('active');
-        }
-    </script>
+                // Show the selected tab content and mark tab as active
+                document.getElementById(tabName).classList.add('active');
+                evt.currentTarget.classList.add('active');
+            };
 """
 
     html_content += """
+        });
+    </script>
 </body>
 </html>
 """
