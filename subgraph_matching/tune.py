@@ -1,12 +1,9 @@
 """Hyperparameter tuning entrypoint for subgraph_matching.
 
 This module intentionally keeps tuning separate from training.
-
 Usage:
-  python -m subgraph_matching.tune --tuning_method bayesian ...
-  python -m subgraph_matching.tune --tuning_method grid ...
-
-Training-only remains in `subgraph_matching.train`.
+  python -m subgraph_matching.tune --tuning_method bayesian
+  python -m subgraph_matching.tune --tuning_method grid 
 """
 
 from __future__ import annotations
