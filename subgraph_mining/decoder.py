@@ -207,7 +207,7 @@ def generate_target_embeddings(dataset, model, args):
     dataset_graph = dataset[0] 
     
     # select seeds from the FULL graph first to ensure we start exactly where intended.
-    all_nodes = sorted(list(dataset_graph.nodes()))
+    all_nodes = sorted(list(dataset_graph.nodes()), key=str)
     
     # Filter out "dead seeds" (isolated nodes) that cannot contain patterns
     # This prevents DeepSnap from crashing on 0-edge subgraphs

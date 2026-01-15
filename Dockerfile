@@ -41,16 +41,16 @@ RUN pip install --no-cache-dir \
     seaborn==0.9.0
 
 # Torch + PyG ecosystem (CPU-only)
-RUN pip install torch==1.4.0+cpu torchvision==0.5.0+cpu \
+RUN pip install torch==1.7.1+cpu torchvision==0.8.2+cpu \
     -f https://download.pytorch.org/whl/torch_stable.html
 
 RUN pip install --no-cache-dir \
-    torch-scatter==2.0.2 \
-    torch-sparse==0.6.1 \
-    torch-cluster==1.5.4 \
-    torch-spline-conv==1.2.0 \
+    torch-scatter==2.0.7 \
+    torch-sparse==0.6.9 \
+    torch-cluster==1.5.9 \
+    torch-spline-conv==1.2.1 \
     torch-geometric==1.4.3 \
-    --find-links https://data.pyg.org/whl/torch-1.4.0+cpu.html
+    --find-links https://data.pyg.org/whl/torch-1.7.1+cpu.html
 
 # Other utilities
 RUN pip install --no-cache-dir \
@@ -64,7 +64,10 @@ RUN pip install --no-cache-dir \
 RUN pip install --no-cache-dir \
     fastapi \
     uvicorn \
-    python-multipart
+    python-multipart \
+    python-dotenv \
+    transformers==4.26.0 \
+    sacremoses==0.0.53
 
 # Copy the project
 COPY . .

@@ -825,6 +825,14 @@
                 <span>Pattern Analyser</span>
                 <button class="chat-close" onclick="toggleChat()">×</button>
             </div>
+            <div id="model-selector-container"
+                style="padding: 8px 16px; background: var(--secondary); border-bottom: 1px solid var(--border-light); display: flex; gap: 8px; align-items: center;">
+                <select id="model-select" onchange="onModelChange()"
+                    style="flex: 1; padding: 6px; border-radius: 4px; background: var(--button-bg); color: var(--text-primary); border: 1px solid var(--border-light); font-size: 12px; outline: none; cursor: pointer;">
+                    <option value="gemini">Gemini Interpreter</option>
+                    <option value="openbiollm">OpenBio-LLM</option>
+                </select>
+            </div>
             <div id="api-key-container">
                 <input type="password" id="api-key-input" placeholder="Enter Gemini API Key" onchange="saveApiKey()">
             </div>
@@ -865,16 +873,30 @@
             loadApiKey();
         }
 
+        function onModelChange() {
+            const model = document.getElementById('model-select').value;
+            const apiKeyInput = document.getElementById('api-key-input');
+            if (model === 'gemini') {
+                apiKeyInput.placeholder = "Enter Gemini API Key";
+                apiKeyInput.value = localStorage.getItem('gemini_api_key') || '';
+            } else {
+                apiKeyInput.placeholder = "Enter Hugging Face Token";
+                apiKeyInput.value = localStorage.getItem('hf_api_key') || '';
+            }
+        }
+
         function saveApiKey() {
+            const model = document.getElementById('model-select').value;
             const key = document.getElementById('api-key-input').value;
-            localStorage.setItem('gemini_api_key', key);
+            if (model === 'gemini') {
+                localStorage.setItem('gemini_api_key', key);
+            } else {
+                localStorage.setItem('hf_api_key', key);
+            }
         }
 
         function loadApiKey() {
-            const key = localStorage.getItem('gemini_api_key');
-            if (key) {
-                document.getElementById('api-key-input').value = key;
-            }
+            onModelChange();
         }
 
         function handleKeyPress(event) {
@@ -914,7 +936,8 @@
                     graph_data: graphDataPayload,
                     query: message,
                     pattern_key: patternKey,
-                    api_key: apiKey
+                    api_key: apiKey,
+                    model: document.getElementById('model-select').value
                 };
 
                 const response = await fetch(apiUrl, {
@@ -4187,7 +4210,7 @@
             }
 
             // Theme toggle event listener
-            themeToggle.addEventListener('click', function() {
+            themeToggle.addEventListener('click', function () {
                 const isDark = html.classList.contains('dark');
                 if (isDark) {
                     html.classList.remove('dark');
@@ -4205,7 +4228,7 @@
             });
 
             // Listen for theme changes from other windows/tabs/iframes
-            window.addEventListener('storage', function(e) {
+            window.addEventListener('storage', function (e) {
                 if (e.key === 'neural-miner-theme' && e.newValue) {
                     const newTheme = e.newValue;
                     if (newTheme === 'dark') {
@@ -4223,7 +4246,7 @@
             });
 
             // Listen for theme change messages from parent window
-            window.addEventListener('message', function(e) {
+            window.addEventListener('message', function (e) {
                 if (e.data && e.data.type === 'theme-change') {
                     const newTheme = e.data.theme;
                     if (newTheme === 'dark') {

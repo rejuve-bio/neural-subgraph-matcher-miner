@@ -12,18 +12,20 @@ class ChatRequest(BaseModel):
     query: str
     pattern_key: Optional[str] = None
     api_key: Optional[str] = None
+    model: Optional[str] = "gemini"
 
 @router.post("/chat")
 async def chat(request: ChatRequest):
     """
-    Endpoint to analyze a graph motif using Gemini.
+    Endpoint to analyze a graph motif using Gemini or OpenBio-LLM (via OpenRouter).
     """
     try:
         response = llm_service.analyze_motif(
             graph_data=request.graph_data,
             user_query=request.query,
             pattern_key=request.pattern_key,
-            api_key=request.api_key
+            api_key=request.api_key,
+            model_choice=request.model
         )
         return {"response": response}
     except Exception as e:
