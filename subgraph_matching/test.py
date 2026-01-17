@@ -3,6 +3,7 @@ from collections import defaultdict
 from datetime import datetime
 from sklearn.metrics import roc_auc_score, confusion_matrix
 from sklearn.metrics import precision_recall_curve, average_precision_score
+import numpy as np
 import torch
 
 USE_ORCA_FEATS = False # whether to use orca motif counts along with embeddings
@@ -105,8 +106,39 @@ def validation(args, model, test_pts, logger, batch_n, epoch, verbose=False):
         logger.add_scalar("TN/test", tn, batch_n)
         logger.add_scalar("FP/test", fp, batch_n)
         logger.add_scalar("FN/test", fn, batch_n)
-        print("Saving {}".format(args.model_path))
-        torch.save(model.state_dict(), args.model_path)
+        # Default behavior: keep overwriting `model_path` every eval.
+        # Tuning behavior (opt-in): save ONLY the best checkpoint by a chosen metric.
+        save_best = bool(getattr(args, "save_best", False))
+        if save_best:
+            metric_key = getattr(args, "save_best_metric", "avg_prec")
+            if metric_key not in {"avg_prec", "auroc"}:
+                raise ValueError(f"Unsupported save_best_metric: {metric_key}")
+
+            current_value = float(avg_prec) if metric_key == "avg_prec" else float(auroc)
+            best_value = getattr(args, "_best_metric_value", None)
+            if best_value is None or current_value > float(best_value):
+                args._best_metric_value = current_value
+                args._best_metric_epoch = int(epoch)
+                args._best_metrics = {
+                    "avg_prec": float(avg_prec),
+                    "auroc": float(auroc),
+                    "acc": float(acc),
+                    "prec": float(prec) if prec == prec else float("nan"),
+                    "recall": float(recall) if recall == recall else float("nan"),
+                    "tn": int(tn),
+                    "fp": int(fp),
+                    "fn": int(fn),
+                    "tp": int(tp),
+                }
+                print(
+                    "Saving best checkpoint by {}={:.6f} -> {}".format(
+                        metric_key, current_value, args.model_path
+                    )
+                )
+                torch.save(model.state_dict(), args.model_path)
+        else:
+            print("Saving {}".format(args.model_path))
+            torch.save(model.state_dict(), args.model_path)
 
     if verbose:
         conf_mat_examples = defaultdict(list)
