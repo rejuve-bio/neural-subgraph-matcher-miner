@@ -71,6 +71,9 @@ class MiningService:
                 if config.get('sample_method'):
                     cmd.append("--sample_method={}".format(config['sample_method']))
                     
+                if config.get('out_batch_size'):
+                    cmd.append("--out_batch_size={}".format(config['out_batch_size']))
+                    
                 # Default to true as it seems common
                 cmd.append("--node_anchored")
                     
@@ -120,7 +123,24 @@ class MiningService:
                     # Robust parsing that ignores timestamp prefixes
                     # Example: "[10:00:00] Worker PID 123 finished chunk 1/4"
                     
-                    if "started chunk" in line_str:
+                    if "%|" in line_str:
+                        # Standard tqdm/percentage line: " 25%|██▍       | 123/500"
+                        percentage_str = line_str.split("%")[0].strip()
+                        if "|" in percentage_str: # Handle case where | might be before %
+                            percentage_str = percentage_str.split("|")[-1].strip()
+                        
+                        try:
+                            percentage = int(percentage_str)
+                            if "it/s" in line_str and "/500" in line_str: # Sampling Phase
+                                total_progress = int((percentage / 100) * 30)
+                                update_progress("mining", total_progress, f"Sampling neighborhoods ({percentage}%)...")
+                            elif "it/s" in line_str and "/100" in line_str: # Search Phase
+                                total_progress = 30 + int((percentage / 100) * 60)
+                                update_progress("mining", total_progress, f"Mining patterns ({percentage}%)...")
+                        except:
+                            pass
+
+                    elif "started chunk" in line_str:
                          # "... started chunk 1/4"
                         parts = line_str.split("started chunk")[1].strip().split(" ")[0] # "1/4"
                         current, total = map(int, parts.split("/"))

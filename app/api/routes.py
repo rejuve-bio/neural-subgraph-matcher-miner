@@ -22,7 +22,8 @@ def mine(
     graph_type: str = Form(...),
     search_strategy: str = Form("greedy"),
     sample_method: str = Form("tree"),
-    visualize_instances: bool = Form(...)
+    visualize_instances: bool = Form(...),
+    out_batch_size: int = Form(3)
 ):
     # Validate file
     if not graph_file.filename:
@@ -48,7 +49,8 @@ def mine(
             'graph_type': graph_type,
             'search_strategy': search_strategy,
             'sample_method': sample_method,
-            'visualize_instances': visualize_instances
+            'visualize_instances': visualize_instances,
+            'out_batch_size': out_batch_size
         }
             
         # Run miner with job_id and config
