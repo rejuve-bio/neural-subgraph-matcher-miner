@@ -104,7 +104,10 @@ class Neo4jToNetworkX:
 
 def main():
     parser = argparse.ArgumentParser(description='Load Neo4j graph with simplified attributes')
-    parser.add_argument('--uri', default='bolt://localhost:7687')
+    import os
+    bolt_port = os.getenv("NEO4J_BOLT_PORT", "7687")
+    parser.add_argument('--uri', default=f'bolt://localhost:{bolt_port}')
+
     parser.add_argument('--username', default='neo4j')
     parser.add_argument('--password', required=True)
     parser.add_argument('--output', default='graph.pkl')

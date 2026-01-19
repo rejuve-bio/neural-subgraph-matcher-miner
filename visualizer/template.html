@@ -797,8 +797,8 @@
         <div class="control-group">
             <label>Navigation</label>
             <div class="export-buttons">
-                <button onclick="window.open('http://localhost:3000/import', '_blank')">Upload</button>
-                <button onclick="window.open('http://localhost:3000', '_blank')">Annotation</button>
+                <button onclick="openLink('import')">Upload</button>
+                <button onclick="openLink('')">Annotation</button>
             </div>
         </div>
 
@@ -995,7 +995,16 @@
                 .replace(/\n/g, '<br>')
                 .replace(/- (.*?)(<br>|$)/g, '• $1$2');
         }
-        const apiUrl = 'http://localhost:9002/chat';
+
+        // Navigation Helper
+        function openLink(path) {
+            const baseUrl = window.ANNOTATION_TOOL_URL || 'http://localhost:3000';
+            const url = path ? `${baseUrl}/${path}` : baseUrl;
+            window.open(url, '_blank');
+        }
+
+        const apiUrl = window.API_URL || 'http://localhost:9002/chat';
+
         // Sample 7-node directed graph data
         const GRAPH_DATA = {
             "metadata": {
@@ -4187,7 +4196,7 @@
             }
 
             // Theme toggle event listener
-            themeToggle.addEventListener('click', function() {
+            themeToggle.addEventListener('click', function () {
                 const isDark = html.classList.contains('dark');
                 if (isDark) {
                     html.classList.remove('dark');
@@ -4205,7 +4214,7 @@
             });
 
             // Listen for theme changes from other windows/tabs/iframes
-            window.addEventListener('storage', function(e) {
+            window.addEventListener('storage', function (e) {
                 if (e.key === 'neural-miner-theme' && e.newValue) {
                     const newTheme = e.newValue;
                     if (newTheme === 'dark') {
@@ -4223,7 +4232,7 @@
             });
 
             // Listen for theme change messages from parent window
-            window.addEventListener('message', function(e) {
+            window.addEventListener('message', function (e) {
                 if (e.data && e.data.type === 'theme-change') {
                     const newTheme = e.data.theme;
                     if (newTheme === 'dark') {
