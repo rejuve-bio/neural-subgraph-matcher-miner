@@ -190,17 +190,24 @@ class MiningService:
             if os.path.exists(json_path):
                 # Copy to shared results for download
                 shutil.copy(json_path, os.path.join(shared_results_dir, "patterns.json"))
+                # Copy to persistent results for latest job context (fixed name)
+                shutil.copy(json_path, os.path.join(persistent_results_dir, "patterns.json"))
+                print(f"Persisted patterns JSON locally", flush=True)
 
             # 2. Handle Instance Files (when visualize_instances=True)
             if os.path.exists(instance_pkl_path):
                 # Copy to shared results for download
                 shutil.copy(instance_pkl_path, os.path.join(shared_results_dir, "patterns_all_instances.pkl"))
-                print(f"Copied instance PKL file to shared results", flush=True)
+                # Copy to persistent results for latest job context (fixed name)
+                shutil.copy(instance_pkl_path, os.path.join(persistent_results_dir, "patterns_all_instances.pkl"))
+                print(f"Persisted instance PKL file locally", flush=True)
 
             if os.path.exists(instance_json_path):
                 # Copy to shared results for download
                 shutil.copy(instance_json_path, os.path.join(shared_results_dir, "patterns_all_instances.json"))
-                print(f"Copied instance JSON file to shared results", flush=True)
+                # Copy to persistent results for latest job context (fixed name)
+                shutil.copy(instance_json_path, os.path.join(persistent_results_dir, "patterns_all_instances.json"))
+                print(f"Persisted instance JSON file locally", flush=True)
 
             # 3. Handle Plot Files and Directories
             plots_cluster_dir = "/app/plots/cluster"
