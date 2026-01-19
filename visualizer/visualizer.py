@@ -540,10 +540,21 @@ class HTMLTemplateProcessor:
                 else:
                     raise RuntimeError("Could not find GRAPH_DATA placeholder in template")
             
-            if 'const GRAPH_DATA' not in injected_content:
-                raise RuntimeError("Data injection failed - GRAPH_DATA not found in result")
-                
+            # Inject environment-based URLs
+            import os
+            api_port = os.getenv("NEURAL_MINER_PORT", "9002")
+            tool_port = os.getenv("ANNOTATION_TOOL_PORT", "3000")
+            
+            env_script = f"""
+        window.API_URL = 'http://localhost:{api_port}/chat';
+        window.ANNOTATION_TOOL_URL = 'http://localhost:{tool_port}';
+            """
+            
+            if '<script>' in injected_content:
+                injected_content = injected_content.replace('<script>', f'<script>{env_script}', 1)
+
             return injected_content
+
             
         except json.JSONEncodeError as e:
             raise RuntimeError(f"Failed to serialize graph data to JSON: {str(e)}")
