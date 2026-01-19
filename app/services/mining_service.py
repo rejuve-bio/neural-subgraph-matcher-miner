@@ -18,8 +18,15 @@ class MiningService:
         shared_job_dir = "/shared/output/{}".format(job_id)
         os.makedirs(shared_job_dir, exist_ok=True)
         
-        # Clean plots directory to prevent old results from mixing with new ones
-        plots_cluster_dir = "/app/plots/cluster"
+        # Clean shared results and plots to prevent mixing old data with new ones in the ZIP
+        for sub in ["results", "plots"]:
+            target = os.path.join(shared_job_dir, sub)
+            if os.path.exists(target):
+                shutil.rmtree(target)
+            os.makedirs(target, exist_ok=True)
+
+        # Clean local plots directory to prevent old results from mixing with new ones on the host
+        plots_cluster_dir = os.path.join(Config.BASE_DIR, "plots", "cluster")
         if os.path.exists(plots_cluster_dir):
             shutil.rmtree(plots_cluster_dir)
         os.makedirs(plots_cluster_dir, exist_ok=True)
