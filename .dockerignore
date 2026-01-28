@@ -1,0 +1,43 @@
+.git/
+.gitignore
+
+# Local env files
+.env
+.env.*
+
+# virtual envs
+env/
+venv/
+.venv/
+
+#  caches
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter notebooks & its checkpoints 
+.ipynb_checkpoints/
+**/*.ipynb
+
+# Runtime/training outputs, wich aregenerated at runtime
+results/
+plots/
+runs/
+
+# Large datasets (API mode uploads graph files instead)
+data/
+
+# Common archives/logs
+*.log
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.gz
+*.rar
+
+.vscode/
