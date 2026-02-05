@@ -15,6 +15,9 @@ from tqdm import tqdm
 import torch_geometric.utils as pyg_utils
 
 import torch_geometric.nn as pyg_nn
+
+import matplotlib
+matplotlib.use("Agg")
 from matplotlib import cm
 
 from common import data
@@ -90,7 +93,7 @@ class SearchAgent:
             self.step()
         return self.finish_search()
 
-    def init_search():
+    def init_search(self):
         raise NotImplementedError
 
     def step(self):
@@ -123,6 +126,7 @@ class MCTSSearchAgent(SearchAgent):
         self.visit_counts = defaultdict(lambda: defaultdict(float))
         self.visited_seed_nodes = set()
         self.max_size = self.min_pattern_size
+        self.counts = defaultdict(lambda: defaultdict(list)) 
 
     def is_search_done(self):
         return self.max_size == self.max_pattern_size + 1
@@ -249,12 +253,16 @@ class MCTSSearchAgent(SearchAgent):
             for s2, count in v.items():
                 counts[len(random.choice(self.wl_hash_to_graphs[s2]))][s2] += count
 
+
+        for wl_hash, graphs in self.wl_hash_to_graphs.items():
+            if graphs:
+                size = len(graphs[0])
+                self.counts[size][wl_hash].extend(graphs)
+
         cand_patterns_uniq = []
         for pattern_size in range(self.min_pattern_size, self.max_pattern_size+1):
-            for wl_hash, count in sorted(counts[pattern_size].items(), key=lambda
-                x: x[1], reverse=True)[:self.out_batch_size]:
-                cand_patterns_uniq.append(random.choice(
-                    self.wl_hash_to_graphs[wl_hash]))
+            for wl_hash, count in sorted(counts[pattern_size].items(), key=lambda x: x[1], reverse=True)[:self.out_batch_size]:
+                cand_patterns_uniq.append(random.choice(self.wl_hash_to_graphs[wl_hash]))
                 print("- outputting", count, "motifs of size", pattern_size)
         return cand_patterns_uniq
 def default_dd_list():
@@ -298,7 +306,8 @@ def run_greedy_trial(trial_idx):
     start_node = random.choice(list(graph.nodes))
 
     neigh = [start_node]
-    if worker_args.graph_type == "undirected":
+    is_directed = graph.is_directed() if hasattr(graph, "is_directed") else False
+    if worker_args.graph_type == "undirected" or not is_directed:
         frontier = list(set(graph.neighbors(start_node)) - set(neigh))
     elif worker_args.graph_type == "directed":
         frontier = list(set(graph.successors(start_node)) - set(neigh))
@@ -343,7 +352,7 @@ def run_greedy_trial(trial_idx):
         if best_node is None:
             break
 
-        if worker_args.graph_type == "undirected":
+        if worker_args.graph_type == "undirected" or not is_directed:
             frontier = list(((set(frontier) | set(graph.neighbors(best_node))) - visited) - {best_node})
         elif worker_args.graph_type == "directed":
             frontier = list(((set(frontier) | set(graph.successors(best_node))) - visited) - {best_node})      
@@ -748,6 +757,7 @@ class BeamSearchAgent(SearchAgent):
             self.min_pattern_size, self.max_pattern_size + 1)}
         self.cand_patterns = defaultdict(list)
         self.pattern_counts = defaultdict(lambda: defaultdict(list))
+        self.counts = self.pattern_counts 
         self.trials_completed = 0
         self.current_size = self.min_pattern_size
         self.analyze_embs = [] if self.analyze else None
@@ -932,7 +942,6 @@ class BeamSearchAgent(SearchAgent):
         for score, pattern, graph_idx, seed_node in current_beam:
             # Add to candidate patterns
             self.cand_patterns[len(pattern)].append((score, pattern))
-            
             # Track pattern counts by WL hash
             pattern_hash = utils.wl_hash(pattern, node_anchored=self.node_anchored)
             self.pattern_counts[len(pattern)][pattern_hash].append(pattern)

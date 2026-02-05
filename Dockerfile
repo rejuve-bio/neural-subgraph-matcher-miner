@@ -5,6 +5,10 @@ FROM python:3.7-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
+# Make pip installs on slower networks
+ENV PIP_DEFAULT_TIMEOUT=300
+ENV PIP_NO_BUILD_ISOLATION=1
+
 # Install system build dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
