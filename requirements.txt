@@ -12,3 +12,5 @@ fastapi
 uvicorn
 python-multipart
 requests
+
+optuna # for bayesian tuning
