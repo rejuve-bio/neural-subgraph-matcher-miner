@@ -2,9 +2,9 @@ name: Run Decoder
 
 on:
   push:
-    branches: [main]
+    branches: [main , test/visualizer-refactor]
   pull_request:
-    branches: [main]
+    branches: [main , test/visualizer-refactor]
   workflow_dispatch:
 
 jobs:
