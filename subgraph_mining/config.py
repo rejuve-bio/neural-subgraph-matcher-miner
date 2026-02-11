@@ -59,6 +59,12 @@ def parse_decoder(parser):
     dec_parser.add_argument('--visualize_instances', action='store_true',
         help='Generate visualizations for all pattern instances (default: only representatives)')
 
+    # Batch processing parameters
+    dec_parser.add_argument('--streaming_workers', type=int, default=4,
+        help='Number of workers for streaming. (Auto-scaled down for large graphs to prevent OOM)')
+    dec_parser.add_argument('--auto_streaming_threshold', type=int, default=500000,
+        help='Auto-enable batch processing for graphs with more than this many nodes')
+
     # Set default values
     parser.set_defaults(
         # Dataset defaults
@@ -66,7 +72,7 @@ def parse_decoder(parser):
         batch_size=1000,
         
         # Decoder defaults
-        out_path="results/out-patterns.p",
+        out_path="results/patterns.p",
         n_neighborhoods=100,
         n_trials=100,
         decode_thresh=0.5,
@@ -82,5 +88,7 @@ def parse_decoder(parser):
         search_strategy="greedy",
         out_batch_size=3,
         node_anchored=True,
-        memory_limit=1000000
+        memory_limit=1000000,
+        streaming_workers=4,
+        auto_streaming_threshold=50000
     )

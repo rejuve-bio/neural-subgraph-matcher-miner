@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Graph Visualizer v2</title>
+    <!-- Dependencies for PDF Export -->
+    <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js"></script>
+</head>
+<body>
+    <div id="app"></div>
+    
+    <script>
+        /* const GRAPH_DATA = {{ GRAPH_DATA_JSON }}; */
+        
+        if (typeof GRAPH_DATA === 'undefined') {
+            window.GRAPH_DATA = null;
+        }
+    </script>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>

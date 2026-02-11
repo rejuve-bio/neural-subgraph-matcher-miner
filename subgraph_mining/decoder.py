@@ -1,23 +1,26 @@
 import argparse
 import csv
+import collections
 from itertools import combinations
 import time
 import os
 import pickle
 import sys
+import traceback
 from pathlib import Path
 
 from deepsnap.batch import Batch
+from deepsnap.graph import Graph as DSGraph
 import numpy as np
 import torch
 import torch.optim as optim
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
 from torch_geometric.datasets import TUDataset, PPI
 from torch_geometric.datasets import Planetoid, KarateClub, QM7b
-from torch_geometric.data import DataLoader
 import torch_geometric.utils as pyg_utils
 
 import torch_geometric.nn as pyg_nn
@@ -29,8 +32,13 @@ from common import utils
 from common import combined_syn
 from subgraph_mining.config import parse_decoder
 from subgraph_matching.config import parse_encoder
+import datetime  
+import uuid 
 
-# CRITICAL: Import visualizer at top level (not inside functions)
+# Add root to sys.path for robust imports in various environments (Docker, etc)
+if os.getcwd() not in sys.path:
+    sys.path.append(os.getcwd())
+
 try:
     from visualizer.visualizer import visualize_pattern_graph_ext, visualize_all_pattern_instances
     VISUALIZER_AVAILABLE = True
@@ -39,6 +47,7 @@ except ImportError:
     VISUALIZER_AVAILABLE = False
     visualize_pattern_graph_ext = None
     visualize_all_pattern_instances = None
+
 
 from subgraph_mining.search_agents import (
     GreedySearchAgent, MCTSSearchAgent, 
@@ -60,7 +69,6 @@ from itertools import permutations
 from queue import PriorityQueue
 import matplotlib.colors as mcolors
 import networkx as nx
-import torch.multiprocessing as mp
 from sklearn.decomposition import PCA
 import json 
 import logging
@@ -72,6 +80,201 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+
+# Dataset class for parallel processing with on-the-fly sampling
+def extract_neighborhood(dataset_graph, seed, args, is_directed):
+    """
+    Unified neighborhood extraction logic to ensure consistency across all datasets.
+    """
+    nodes_in_bubble = []
+    queue = collections.deque([(seed, 0)]) 
+    visited = {seed}
+    
+    while queue and len(nodes_in_bubble) < args.max_neighborhood_size:
+        curr, dist = queue.popleft()
+        nodes_in_bubble.append(curr)
+
+        if dist < args.radius:
+            neighbors = dataset_graph.successors(curr) if is_directed else dataset_graph.neighbors(curr)
+            for neighbor in neighbors:
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append((neighbor, dist + 1))
+    
+    # Induce subgraph
+    neigh_graph = dataset_graph.subgraph(nodes_in_bubble).copy()
+    
+    neigh_graph.graph['anchor_node_original'] = seed
+    
+    # Standardize mapping
+    mapping = {node: i for i, node in enumerate(neigh_graph.nodes())}
+    neigh_graph = nx.relabel_nodes(neigh_graph, mapping)
+    
+    new_anchor_id = mapping[seed]
+    neigh_graph.graph['anchor_node'] = new_anchor_id
+    
+    # Label anchor attribute explicitly
+    nx.set_node_attributes(neigh_graph, 0, 'anchor')
+    neigh_graph.nodes[new_anchor_id]['anchor'] = 1
+    
+    if neigh_graph.number_of_edges() == 0:
+        neigh_graph.add_edge(new_anchor_id, new_anchor_id)
+        
+    return neigh_graph, new_anchor_id
+
+class TargetedDataset(Dataset):
+    def __init__(self, dataset_graph, selected_seeds, args):
+        self.dataset_graph = dataset_graph
+        self.selected_seeds = selected_seeds
+        self.args = args
+        self.is_directed = (args.graph_type == "directed")
+        self.radius = args.radius
+
+    def __len__(self):
+        return len(self.selected_seeds)
+
+    def __getitem__(self, idx):
+        seed = self.selected_seeds[idx]
+        neigh_graph, new_anchor_id = extract_neighborhood(self.dataset_graph, seed, self.args, self.is_directed)
+        std_g = utils.standardize_graph(neigh_graph, anchor=new_anchor_id)
+        return DSGraph(std_g)
+
+#  Streaming Dataset for large graphs
+class StreamingNeighborhoodDataset(Dataset):
+    """On-the-fly neighborhood sampling for batch processing."""
+    def __init__(self, dataset, n_neighborhoods, args):
+        self.dataset = dataset
+        self.n_neighborhoods = n_neighborhoods
+        self.args = args
+        self.anchors = [0] * n_neighborhoods if args.node_anchored else None
+
+    def __len__(self):
+        return self.n_neighborhoods
+
+    def __getitem__(self, idx):
+        graph, neigh = utils.sample_neigh(self.dataset,
+            random.randint(self.args.min_neighborhood_size,
+                self.args.max_neighborhood_size), self.args.graph_type)
+        
+        neigh_graph = graph.subgraph(neigh).copy()
+        neigh_graph = nx.convert_node_labels_to_integers(neigh_graph)
+        
+        anchor = 0 if self.args.node_anchored else None
+        std_graph = utils.standardize_graph(neigh_graph, anchor)
+        return DSGraph(std_graph)
+
+
+# Extracts neighborhoods only when iterated
+class LazyNeighborhoodGraphList:
+    def __init__(self, dataset_graph, selected_seeds, args):
+        self.dataset_graph = dataset_graph
+        self.selected_seeds = selected_seeds
+        self.args = args
+        self.is_directed = (args.graph_type == "directed")
+        self.radius = args.radius
+
+    def __len__(self):
+        return len(self.selected_seeds)
+
+    def __getitem__(self, idx):
+        seed = self.selected_seeds[idx]
+        neigh_graph, _ = extract_neighborhood(self.dataset_graph, seed, self.args, self.is_directed)
+        return neigh_graph
+
+
+def collate_fn(ds_graphs):
+    """Batching logic for DeepSnap models."""
+    from common import feature_preprocess
+    batch = Batch.from_data_list(ds_graphs)
+    augmenter = feature_preprocess.FeatureAugment()
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', message='Unknown type of key*')
+        batch = augmenter.augment(batch)
+    return batch
+
+
+#  Embedding generation with DataLoader
+def generate_target_embeddings(dataset, model, args):
+    """Generate embeddings using Targeted Anchor Streaming."""
+    logger.info(f"Setting up Batch Processing Pipeline (Batch Size: {args.batch_size})")
+
+    # Reproducibility
+    random.seed(42)
+    np.random.seed(42)
+
+    dataset_graph = dataset[0] 
+    
+    # select seeds from the FULL graph first to ensure we start exactly where intended.
+    all_nodes = sorted(list(dataset_graph.nodes()), key=str)
+    
+    # Filter out "dead seeds" (isolated nodes) that cannot contain patterns
+    # This prevents DeepSnap from crashing on 0-edge subgraphs
+    is_directed = (args.graph_type == "directed")
+    if is_directed:
+        all_nodes = [n for n in all_nodes if dataset_graph.out_degree(n) > 0]
+    else:
+        all_nodes = [n for n in all_nodes if dataset_graph.degree(n) > 0]
+        
+    if args.sample_method == "radial":
+        selected_seeds = all_nodes
+        logger.info(f"Radial Method: Targeting {len(selected_seeds)} non-isolated nodes for coverage.")
+    else:
+        # 100% Uniform Random Seeding
+        n_seeds = args.n_neighborhoods
+        if len(all_nodes) <= n_seeds:
+            selected_seeds = all_nodes
+            logger.info(f"Tree Method: Using all {len(selected_seeds)} nodes as seeds.")
+        else:
+            selected_seeds = np.random.choice(all_nodes, size=n_seeds, replace=False)
+            logger.info(f"Tree Method: Sampled {n_seeds} random seeds for graph coverage.")
+
+    targeted_dataset = TargetedDataset(dataset_graph, selected_seeds, args)
+    
+    num_workers = args.streaming_workers
+    safe_batch_size = min(args.batch_size, 64) if num_workers > 0 else args.batch_size
+    pin_memory = torch.cuda.is_available()
+    
+    def create_loader(w, b):
+        return DataLoader(targeted_dataset, batch_size=b, 
+                          shuffle=False, collate_fn=collate_fn, 
+                          num_workers=w, pin_memory=pin_memory)
+
+    dataloader = create_loader(num_workers, safe_batch_size)
+
+    embs = []
+    device = utils.get_device()
+    model.to(device)
+    
+    logger.info(f"Generating embeddings for {len(selected_seeds)} targeted neighborhoods (Batch: {safe_batch_size}, Workers: {num_workers})...")
+    
+    try:
+        for batch in tqdm(dataloader):
+            with torch.no_grad():
+                emb = model.emb_model(batch.to(device))
+                embs.append(emb.to(torch.device("cpu")))
+    except RuntimeError as e:
+        if "unable to write to file" in str(e) or "shared memory" in str(e).lower():
+            logger.warning("Docker SHM Limit Hit! Falling back to 100% stable single-process mode...")
+            
+            import gc
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            
+            # Fallback to single process
+            num_workers = 0
+            dataloader = create_loader(0, args.batch_size)
+            embs = []
+            for batch in tqdm(dataloader, desc="Stable Fallback"):
+                with torch.no_grad():
+                    emb = model.emb_model(batch.to(device))
+                    embs.append(emb.to(torch.device("cpu")))
+        else:
+            raise e
+    lazy_graphs = LazyNeighborhoodGraphList(dataset_graph, selected_seeds, args)
+    return embs, lazy_graphs
 
 
 def ensure_directories():
@@ -152,24 +355,68 @@ def _process_chunk(args_tuple):
         return []
 
 
+#  Optimized streaming entry point
 def pattern_growth_streaming(dataset, task, args):
-    graph = dataset[0]
-    graph_chunks = process_large_graph_in_chunks(graph, chunk_size=args.chunk_size)
-    dataset = graph_chunks
+    """Entry point for batch processing mode."""
+    import gc
+    if args.method_type == "end2end":
+        model = models.End2EndOrder(1, args.hidden_dim, args)
+    elif args.method_type == "mlp":
+        model = models.BaselineMLP(1, args.hidden_dim, args)
+    else:
+        model = models.OrderEmbedder(1, args.hidden_dim, args)
+    
+    model.load_state_dict(torch.load(args.model_path, map_location=utils.get_device()))
+    model.eval()
+    
+    # Batched embedding generation
+    global_embs, seed_graphs = generate_target_embeddings(dataset, model, args)
+    
+    # Release the massive main graph from memory before search
+    logger.info("CRITICAL: Cleaning up main graph from RAM to optimize Search Phase...")
+    if isinstance(dataset, list):
+        dataset.clear()
+    del dataset
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        logger.info("GPU cache cleared.")
+    
+    # Parallel search
+    logger.info("Search phase starting with precomputed embeddings...")
+    # Force use_whole_graphs=True because the input 'seed_graphs' are already the extracted neighborhoods
+    original_use_whole = args.use_whole_graphs
+    args.use_whole_graphs = True
+    found_patterns = pattern_growth(seed_graphs, task, args, precomputed_data=global_embs, preloaded_model=model)
+    args.use_whole_graphs = original_use_whole
+    
+    # Global Frequency Validation (Accuracy validator for batch processing)
+    logger.info("Performing Global Frequency Validation on discovered patterns...")
+    
+    if global_embs and len(global_embs) > 0:
+        global_matrix = torch.cat(global_embs, dim=0).to(utils.get_device()) # (10000, D)
+        
+        for pattern in found_patterns:
+            pat_anchor = 0 if args.node_anchored else None
+            std_pat = utils.standardize_graph(pattern, anchor=pat_anchor)
+            ds_pat = DSGraph(std_pat)
+            batch_pat = Batch.from_data_list([ds_pat]).to(utils.get_device())
+            
+            with torch.no_grad():
+                pat_emb = model.emb_model(batch_pat) # (1, D)
+                        
+            diff = pat_emb - global_matrix
+            violation = torch.clamp(diff, min=0)
+            violation_sq = torch.sum(violation ** 2, dim=1)
+            epsilon = 1e-5
+            support_count = (violation_sq < epsilon).sum().item()
+            
+            total_universe_size = global_matrix.shape[0]
+            logger.info(f"Pattern Size {len(pattern)}: Corrected Support {pattern.graph.get('support', 0)} -> {support_count} (Universe Size: {total_universe_size})")
+            pattern.graph['support'] = support_count
+            pattern.graph['frequency'] = support_count / total_universe_size
 
-    all_discovered_patterns = []
-
-    total_chunks = len(dataset)
-    chunk_args = [(chunk_dataset, task, args, idx, total_chunks) for idx, chunk_dataset in enumerate(dataset)]
-
-    with mp.Pool(processes=4) as pool:
-        results = pool.map(_process_chunk, chunk_args)
-
-    for chunk_out_graphs in results:
-        if chunk_out_graphs:
-            all_discovered_patterns.extend(chunk_out_graphs)
-
-    return all_discovered_patterns
+    return found_patterns
 
 
 def visualize_pattern_graph(pattern, args, count_by_size):
@@ -489,32 +736,149 @@ def visualize_pattern_graph(pattern, args, count_by_size):
         logger.error(f"Error visualizing pattern graph: {e}")
         return False
 
-
-def save_and_visualize_all_instances(agent, args, representative_patterns=None):
+def save_instances_to_json(output_data, args, graph_context=None):  
+    json_results = []
+    # Add graph context as first item if provided  
+    if graph_context:  
+        json_results.append({  
+            'type': 'graph_context',  
+            'data': graph_context  
+        })
+        print("Added graph context to JSON results")   
+    else:  
+        print("No graph context provided for JSON results")
+    for pattern_key, pattern_info in output_data.items():  
+        for instance in pattern_info['instances']:  
+            pattern_data = {  
+                'nodes': [  
+                    {  
+                        'id': str(node),  
+                        'label': instance.nodes[node].get('label', ''),  
+                        'anchor': instance.nodes[node].get('anchor', 0),  
+                        **{k: v for k, v in instance.nodes[node].items()   
+                           if k not in ['label', 'anchor']}  
+                    }  
+                    for node in instance.nodes()  
+                ],  
+                'edges': [  
+                    {  
+                        'source': str(u),  
+                        'target': str(v),  
+                        'type': data.get('type', ''),  
+                        **{k: v for k, v in data.items() if k != 'type'}  
+                    }  
+                    for u, v, data in instance.edges(data=True)  
+                ],  
+                'metadata': {  
+                    'pattern_key': pattern_key,  
+                    'size': pattern_info['size'],  
+                    'rank': pattern_info['rank'],  
+                    'num_nodes': len(instance),  
+                    'num_edges': instance.number_of_edges(),  
+                    'is_directed': instance.is_directed(),  
+                    'original_count': pattern_info['count'],  # Use unique count as the "true" count
+                    'discovery_frequency': pattern_info['original_count'], # Keep raw hits as extra metadata
+                    'duplicates_removed': pattern_info['duplicates_removed'],  
+                    'frequency_score': pattern_info['count'] / args.n_trials if args.n_trials > 0 else 0
+                }  
+            }
+         
+            json_results.append(pattern_data)  
+    base_path = os.path.splitext(args.out_path)[0]  
+    json_path = base_path + '_all_instances.json'  
+      
+    # Ensure directory exists    
+    os.makedirs(os.path.dirname(json_path), exist_ok=True)    
+        
+    with open(json_path, 'w') as f:      
+        json.dump(json_results, f, indent=2)      
+          
+    logger.info(f"JSON saved to: {json_path}")    
+        
+    return json_path  
+def update_run_index(json_path, args):  
+    """Update index file with run information"""  
+    index_file = "results/run_index.json"  
+      
+    # Load existing index or create new  
+    if os.path.exists(index_file):  
+        with open(index_file, 'r') as f:  
+            index = json.load(f)  
+    else:  
+        index = {"runs": []}  
+      
+    # Add current run  
+    run_info = {  
+        "timestamp": datetime.datetime.now().isoformat(),  
+        "filename": os.path.basename(json_path),  
+        "full_path": json_path,  
+        "dataset": args.dataset,  
+        "n_trials": args.n_trials,  
+        "graph_type": args.graph_type,  
+        "search_strategy": getattr(args, 'search_strategy', 'unknown')  
+    }  
+      
+    index["runs"].append(run_info)  
+      
+    # Save updated index  
+    with open(index_file, 'w') as f:  
+        json.dump(index, f, indent=2)
+def save_and_visualize_all_instances(agent, args):
     try:
         logger.info("="*70)
         logger.info("SAVING AND VISUALIZING ALL PATTERN INSTANCES")
         logger.info("="*70)
-
+        graph_context = {} 
         if not hasattr(agent, 'counts'):
             logger.error("Agent has no 'counts' attribute!")
             return None
-
+         
+        if hasattr(agent, 'dataset'):  
+            logger.info(f"Agent has dataset attribute with {len(agent.dataset)} graphs")  
+        else:  
+            logger.error("Agent has no 'dataset' attribute!")  
+            
+        if hasattr(agent, 'dataset') and agent.dataset:    
+            total_nodes = sum(g.number_of_nodes() for g in agent.dataset)    
+            total_edges = sum(g.number_of_edges() for g in agent.dataset)    
+            graph_types = set('directed' if g.is_directed() else 'undirected' for g in agent.dataset)    
+            
+            graph_context = {    
+                'num_graphs': len(agent.dataset),    
+                'total_nodes': total_nodes,    
+                'total_edges': total_edges,    
+                'graph_types': list(graph_types),    
+                'sampling_trials': args.n_trials,    
+                'neighborhoods_sampled': getattr(args, 'n_neighborhoods', 0),    
+                'sample_method': getattr(args, 'sample_method', 'unknown'),    
+                'min_pattern_size': args.min_pattern_size,    
+                'max_pattern_size': args.max_pattern_size    
+            }  
+            logger.info(f"Graph context created: {graph_context}")  
+        else:  
+            logger.warning("Skipping graph_context - agent.dataset is empty or missing")  
+        
+         
+        if not graph_context:  
+            graph_context = {  
+                'num_graphs': 0,  
+                'total_nodes': 0,  
+                'total_edges': 0,  
+                'graph_types': [],  
+                'sampling_trials': args.n_trials,  
+                'neighborhoods_sampled': getattr(args, 'n_neighborhoods', 0),  
+                'sample_method': getattr(args, 'sample_method', 'unknown'),  
+                'min_pattern_size': args.min_pattern_size,  
+                'max_pattern_size': args.max_pattern_size,  
+                'note': 'Dataset not available on agent'  
+            }  
+            logger.info("Using fallback graph_context")
         if not agent.counts:
             logger.warning("Agent.counts is empty - no patterns to save")
             return None
-
+        
         logger.info(f"Agent.counts has {len(agent.counts)} size categories")
-
-        # Build a mapping from WL hash to representative pattern
-        representative_map = {}
-        if representative_patterns:
-            logger.info(f"Building representative pattern mapping for {len(representative_patterns)} patterns...")
-            for rep_pattern in representative_patterns:
-                wl = utils.wl_hash(rep_pattern, node_anchored=args.node_anchored)
-                representative_map[wl] = rep_pattern
-            logger.info(f"  Mapped {len(representative_map)} representative patterns")
-
+        
         output_data = {}
         total_instances = 0
         total_unique_instances = 0
@@ -573,11 +937,12 @@ def save_and_visualize_all_instances(agent, args, representative_patterns=None):
                     'count': count,  
                     'instances': unique_instances,  
                     
-                    'original_count': original_count,  
+                    'original_count': count,      # Aligned with unique instances for user expectation
+                    'discovery_hits': original_count, # Raw discovery frequency
                     'duplicates_removed': duplicates,
                     'duplication_rate': duplicates / original_count if original_count > 0 else 0,
                     
-                    'frequency_score': original_count / args.n_trials if args.n_trials > 0 else 0,
+                    'frequency_score': count / args.n_trials if args.n_trials > 0 else 0,
                     'discovery_rate': original_count / count if count > 0 else 0,
                     
                     'mining_trials': args.n_trials,
@@ -596,38 +961,49 @@ def save_and_visualize_all_instances(agent, args, representative_patterns=None):
                 else:
                     logger.info(f"  {pattern_key}: {count} instances")
                 
-                # Check if user wants to visualize instances
-                visualize_instances = getattr(args, 'visualize_instances', False)
-
-                if visualize_instances and VISUALIZER_AVAILABLE and visualize_all_pattern_instances:
+                if VISUALIZER_AVAILABLE:
                     try:
-                        # Get the representative pattern for this WL hash
-                        representative_pattern = representative_map.get(wl_hash, None)
+                        from visualizer.visualizer import visualize_all_pattern_instances, visualize_pattern_graph_ext, clear_visualizations
+                        
+                        # Use top-level imports already defined to avoid context issues
+                        
+                        # Cleanup once at the start of the batch if needed (using rank=1 as trigger)
+                        if rank == 1 and size == args.min_pattern_size:
+                            output_dir = os.path.join("plots", "cluster")
+                            if args.visualize_instances:
+                                clear_visualizations(output_dir, mode="folder")
+                            else:
+                                clear_visualizations(output_dir, mode="flat")
 
-                        if representative_pattern:
-                            logger.info(f"    Using decoder representative pattern for {pattern_key}")
+                        if args.visualize_instances:
+                            # Structured folder mode
+                            success = visualize_all_pattern_instances(
+                                pattern_instances=unique_instances,
+                                pattern_key=pattern_key,
+                                count=count,
+                                output_dir=os.path.join("plots", "cluster"),
+                                visualize_instances=True
+                            )
                         else:
-                            logger.warning(f"    No decoder representative found for {pattern_key}, will select from instances")
-
-                        logger.info(f"    Mode: Visualizing representative + {count} instances in subdirectory")
-
-                        success = visualize_all_pattern_instances(
-                            pattern_instances=unique_instances,
-                            pattern_key=pattern_key,
-                            count=count,
-                            output_dir=os.path.join("plots", "cluster"),
-                            representative_pattern=representative_pattern,
-                            visualize_instances=True
-                        )
+                            # Flat descriptive file mode
+                            # Use first instance as representative (they are same WL hash)
+                            representative = unique_instances[0]
+                            success = visualize_pattern_graph_ext(
+                                pattern=representative,
+                                args=args,
+                                count_by_size={size: rank},
+                                pattern_key=pattern_key
+                            )
+                        
                         if success:
-                            total_visualizations += count
-                            logger.info(f"    ✓ Visualized representative + {count} instances in {pattern_key}/")
+                            total_visualizations += (count if args.visualize_instances else 1)
+                            logger.info(f"    ✓ Visualized {pattern_key}")
                         else:
                             logger.warning(f"    ✗ Visualization failed for {pattern_key}")
                     except Exception as e:
                         logger.error(f"    ✗ Visualization error: {e}")
-                elif not visualize_instances:
-                    logger.info(f"    Mode: Representatives will be visualized directly in plots/cluster/ (no subdirectories)")
+                        import traceback
+                        traceback.print_exc()
                 else:
                     logger.warning(f"    ⚠ Skipping visualization (visualizer not available)")
         
@@ -641,12 +1017,21 @@ def save_and_visualize_all_instances(agent, args, representative_patterns=None):
         with open(pkl_path, 'wb') as f:
             pickle.dump(output_data, f, protocol=pickle.HIGHEST_PROTOCOL)
         
+        # Add unique JSON saving  
+        json_path = save_instances_to_json(output_data, args, graph_context)    
+        logger.info(f"JSON saved to: {json_path}")    
         if os.path.exists(pkl_path):
             file_size = os.path.getsize(pkl_path) / 1024  # KB
             logger.info(f"✓ PKL file created successfully ({file_size:.1f} KB)")
         else:
             logger.error("✗ PKL file was not created!")
             return None
+        
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            logger.info("GPU memory cleared after visualization.")
         
         logger.info("="*70)
         logger.info("✓ COMPLETE")
@@ -676,24 +1061,28 @@ def save_and_visualize_all_instances(agent, args, representative_patterns=None):
         return None
 
 
-def pattern_growth(dataset, task, args):
+def pattern_growth(dataset, task, args, precomputed_data=None, preloaded_model=None):
     """Main pattern mining function."""
     start_time = time.time()
     
     ensure_directories()
     
-    # Load model
-    if args.method_type == "end2end":
+    # Load model (or use preloaded)
+    if preloaded_model:
+        model = preloaded_model
+    elif args.method_type == "end2end":
         model = models.End2EndOrder(1, args.hidden_dim, args)
     elif args.method_type == "mlp":
         model = models.BaselineMLP(1, args.hidden_dim, args)
     else:
         model = models.OrderEmbedder(1, args.hidden_dim, args)
     
+    if not preloaded_model:
+        model.load_state_dict(torch.load(args.model_path,
+            map_location=utils.get_device()))
+    
     model.to(utils.get_device())
     model.eval()
-    model.load_state_dict(torch.load(args.model_path,
-        map_location=utils.get_device()))
 
     if task == "graph-labeled":
         dataset, labels = dataset
@@ -779,18 +1168,22 @@ def pattern_growth(dataset, task, args):
                 if args.node_anchored:
                     anchors.append(0)
 
-    embs = []
-    if len(neighs) % args.batch_size != 0:
-        logger.warning("Number of graphs not multiple of batch size")
-    
-    for i in range(len(neighs) // args.batch_size):
-        top = (i+1)*args.batch_size
-        with torch.no_grad():
-            batch = utils.batch_nx_graphs(neighs[i*args.batch_size:top],
-                anchors=anchors if args.node_anchored else None)
-            emb = model.emb_model(batch)
-            emb = emb.to(torch.device("cpu"))
-        embs.append(emb)
+    #  Use precomputed embeddings if available
+    if precomputed_data:
+        embs = precomputed_data
+    else:
+        embs = []
+        if len(neighs) % args.batch_size != 0:
+            logger.warning("Number of graphs not multiple of batch size")
+        
+        for i in range(len(neighs) // args.batch_size):
+            top = (i+1)*args.batch_size
+            with torch.no_grad():
+                batch = utils.batch_nx_graphs(neighs[i*args.batch_size:top],
+                    anchors=anchors if args.node_anchored else None)
+                emb = model.emb_model(batch)
+                emb = emb.to(torch.device("cpu"))
+            embs.append(emb)
 
     if args.analyze:
         embs_np = torch.stack(embs).numpy()
@@ -842,8 +1235,8 @@ def pattern_growth(dataset, task, args):
 
     if hasattr(agent, 'counts') and agent.counts:
         logger.info("\nSaving all pattern instances...")
-        pkl_path = save_and_visualize_all_instances(agent, args, out_graphs)
-
+        pkl_path = save_and_visualize_all_instances(agent, args)
+        
         if pkl_path:
             logger.info(f"✓ All instances saved to: {pkl_path}")
         else:
@@ -854,32 +1247,17 @@ def pattern_growth(dataset, task, args):
 
     count_by_size = defaultdict(int)
     warnings.filterwarnings("ignore", category=np.VisibleDeprecationWarning)
-
+    
     successful_visualizations = 0
-
-    # Only create direct representative visualizations if --visualize_instances is NOT set
-    # (When --visualize_instances IS set, representatives are already in subdirectories)
-    visualize_instances = getattr(args, 'visualize_instances', False)
-
-    if not visualize_instances and VISUALIZER_AVAILABLE and visualize_pattern_graph_ext:
-        logger.info("\nVisualizing representative patterns directly in plots/cluster/...")
-        for pattern in out_graphs:
-            if visualize_pattern_graph_ext(pattern, args, count_by_size):
-                successful_visualizations += 1
-            count_by_size[len(pattern)] += 1
-
-        logger.info(f"✓ Visualized {successful_visualizations}/{len(out_graphs)} representative patterns")
-    elif visualize_instances:
-        logger.info("\nSkipping direct representative visualization (representatives already in subdirectories)")
+    
+    if VISUALIZER_AVAILABLE and visualize_pattern_graph_ext:
+        pass
     else:
         logger.warning("⚠ Skipping representative visualization (visualizer not available)")
 
     ensure_directories()
     
     logger.info(f"\nSaving representative patterns to: {args.out_path}")
-    
-    if not os.path.exists("results"):
-        os.makedirs("results")
     with open(args.out_path, "wb") as f:
         pickle.dump(out_graphs, f, protocol=pickle.HIGHEST_PROTOCOL)
     
@@ -929,150 +1307,170 @@ def pattern_growth(dataset, task, args):
     
     logger.info(f"✓ JSON version saved to: {json_path}")
     
-    json_results = []  
-    for pattern in out_graphs:  
-        pattern_data = {  
-            'nodes': [  
-                {  
-                    'id': str(node),  
-                    'label': pattern.nodes[node].get('label', ''),  
-                    'anchor': pattern.nodes[node].get('anchor', 0),  
-                    **{k: v for k, v in pattern.nodes[node].items()   
-                    if k not in ['label', 'anchor']}  
-                }  
-                for node in pattern.nodes()  
-            ],  
-            'edges': [  
-                {  
-                    'source': str(u),  
-                    'target': str(v),  
-                    'type': data.get('type', ''),  
-                    **{k: v for k, v in data.items() if k != 'type'}  
-                }  
-                for u, v, data in pattern.edges(data=True)  
-            ],  
-            'metadata': {  
-                'num_nodes': len(pattern),  
-                'num_edges': pattern.number_of_edges(),  
-                'is_directed': pattern.is_directed()  
-            }  
-        }  
-        json_results.append(pattern_data) 
-         
-    base_path = os.path.splitext(args.out_path)[0]  
-    if base_path.endswith('.json'):  
-        base_path = os.path.splitext(base_path)[0]  
-      
-    json_path = base_path + '.json'
-
-    
-    with open(json_path, 'w') as f:  
-        json.dump(json_results, f, indent=2)
-        
     return out_graphs
 
 
 def main():
-    ensure_directories()
+    try:
+        ensure_directories()
 
-    parser = argparse.ArgumentParser(description='Decoder arguments')
-    parse_encoder(parser)
-    parse_decoder(parser)
-    
-    args = parser.parse_args()
+        parser = argparse.ArgumentParser(description='Decoder arguments')
+        parse_encoder(parser)
+        parse_decoder(parser)
+        
+        args = parser.parse_args()
 
-    logger.info(f"Using dataset: {args.dataset}")
-    logger.info(f"Graph type: {args.graph_type}")
+        logger.info(f"Using dataset: {args.dataset}")
+        logger.info(f"Graph type: {args.graph_type}")
 
-    if args.dataset.endswith('.pkl'):
-        with open(args.dataset, 'rb') as f:
-            data = pickle.load(f)
-            
-            if isinstance(data, (nx.Graph, nx.DiGraph)):
-                graph = data
+        if args.dataset.endswith('.pkl'):
+            with open(args.dataset, 'rb') as f:
+                data = pickle.load(f)
                 
-                if args.graph_type == "directed" and not graph.is_directed():
-                    logger.info("Converting undirected graph to directed...")
-                    graph = graph.to_directed()
-                elif args.graph_type == "undirected" and graph.is_directed():
-                    logger.info("Converting directed graph to undirected...")
-                    graph = graph.to_undirected()
-                
-                graph_type = "directed" if graph.is_directed() else "undirected"
-                logger.info(f"Using NetworkX {graph_type} graph with {graph.number_of_nodes()} nodes and {graph.number_of_edges()} edges")
-                
-                sample_edges = list(graph.edges(data=True))[:3]
-                if sample_edges:
-                    logger.info("Sample edge attributes:")
-                    for u, v, attrs in sample_edges:
-                        direction_info = attrs.get('direction', f"{u} -> {v}" if graph.is_directed() else f"{u} -- {v}")
-                        edge_type = attrs.get('type', 'unknown')
-                        logger.info(f"  {direction_info} (type: {edge_type})")
-                
-            elif isinstance(data, dict) and 'nodes' in data and 'edges' in data:
-                if args.graph_type == "directed":
-                    graph = nx.DiGraph()
+                if isinstance(data, (nx.Graph, nx.DiGraph)):
+                    graph = data
+                    
+                    if args.graph_type == "directed" and not graph.is_directed():
+                        logger.info("Converting undirected graph to directed...")
+                        graph = graph.to_directed()
+                    elif args.graph_type == "undirected" and graph.is_directed():
+                        logger.info("Converting directed graph to undirected...")
+                        graph = graph.to_undirected()
+                    
+                    graph_type = "directed" if graph.is_directed() else "undirected"
+                    logger.info(f"Using NetworkX {graph_type} graph with {graph.number_of_nodes()} nodes and {graph.number_of_edges()} edges")
+                    
+                    sample_edges = list(graph.edges(data=True))[:3]
+                    if sample_edges:
+                        logger.info("Sample edge attributes:")
+                        for u, v, attrs in sample_edges:
+                            direction_info = attrs.get('direction', f"{u} -> {v}" if graph.is_directed() else f"{u} -- {v}")
+                            edge_type = attrs.get('type', 'unknown')
+                            logger.info(f"  {direction_info} (type: {edge_type})")
+                    
+                elif isinstance(data, dict) and 'nodes' in data and 'edges' in data:
+                    if args.graph_type == "directed":
+                        graph = nx.DiGraph()
+                    else:
+                        graph = nx.Graph()
+                    graph.add_nodes_from(data['nodes'])
+                    graph.add_edges_from(data['edges'])
+                    logger.info(f"Created {args.graph_type} graph from dict format with {graph.number_of_nodes()} nodes and {graph.number_of_edges()} edges")
                 else:
-                    graph = nx.Graph()
-                graph.add_nodes_from(data['nodes'])
-                graph.add_edges_from(data['edges'])
-                logger.info(f"Created {args.graph_type} graph from dict format with {graph.number_of_nodes()} nodes and {graph.number_of_edges()} edges")
-            else:
-                raise ValueError(f"Unknown pickle format. Expected NetworkX graph or dict with 'nodes'/'edges' keys, got {type(data)}")
-                
-        dataset = [graph]
-        task = 'graph'
-    
-    elif args.dataset == 'enzymes':
-        dataset = TUDataset(root='/tmp/ENZYMES', name='ENZYMES')
-        task = 'graph'
-    elif args.dataset == 'cox2':
-        dataset = TUDataset(root='/tmp/cox2', name='COX2')
-        task = 'graph'
-    elif args.dataset == 'reddit-binary':
-        dataset = TUDataset(root='/tmp/REDDIT-BINARY', name='REDDIT-BINARY')
-        task = 'graph'
-    elif args.dataset == 'dblp':
-        dataset = TUDataset(root='/tmp/dblp', name='DBLP_v1')
-        task = 'graph-truncate'
-    elif args.dataset == 'coil':
-        dataset = TUDataset(root='/tmp/coil', name='COIL-DEL')
-        task = 'graph'
-    elif args.dataset.startswith('roadnet-'):
-        graph = nx.Graph() if args.graph_type == "undirected" else nx.DiGraph()
-        with open("data/{}.txt".format(args.dataset), "r") as f:
-            for row in f:
-                if not row.startswith("#"):
-                    a, b = row.split("\t")
+                    raise ValueError(f"Unknown pickle format. Expected NetworkX graph or dict with 'nodes'/'edges' keys, got {type(data)}")
+                    
+            dataset = [graph]
+            task = 'graph'
+        
+        elif args.dataset == 'enzymes':
+            dataset = TUDataset(root='/tmp/ENZYMES', name='ENZYMES')
+            task = 'graph'
+        elif args.dataset == 'cox2':
+            dataset = TUDataset(root='/tmp/cox2', name='COX2')
+            task = 'graph'
+        elif args.dataset == 'reddit-binary':
+            dataset = TUDataset(root='/tmp/REDDIT-BINARY', name='REDDIT-BINARY')
+            task = 'graph'
+        elif args.dataset == 'dblp':
+            dataset = TUDataset(root='/tmp/dblp', name='DBLP_v1')
+            task = 'graph-truncate'
+        elif args.dataset == 'coil':
+            dataset = TUDataset(root='/tmp/coil', name='COIL-DEL')
+            task = 'graph'
+        elif args.dataset.startswith('roadnet-'):
+            graph = nx.Graph() if args.graph_type == "undirected" else nx.DiGraph()
+            with open("data/{}.txt".format(args.dataset), "r") as f:
+                for row in f:
+                    if not row.startswith("#"):
+                        a, b = row.split("\t")
+                        graph.add_edge(int(a), int(b))
+            dataset = [graph]
+            task = 'graph'
+        elif args.dataset == "ppi":
+            dataset = PPI(root="/tmp/PPI")
+            task = 'graph'
+        elif args.dataset in ['diseasome', 'usroads', 'mn-roads', 'infect']:
+            fn = {"diseasome": "bio-diseasome.mtx",
+                "usroads": "road-usroads.mtx",
+                "mn-roads": "mn-roads.mtx",
+                "infect": "infect-dublin.edges"}
+            graph = nx.Graph() if args.graph_type == "undirected" else nx.DiGraph()
+            with open("data/{}".format(fn[args.dataset]), "r") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    a, b = line.strip().split(" ")
                     graph.add_edge(int(a), int(b))
-        dataset = [graph]
-        task = 'graph'
-    elif args.dataset == "ppi":
-        dataset = PPI(root="/tmp/PPI")
-        task = 'graph'
-    elif args.dataset in ['diseasome', 'usroads', 'mn-roads', 'infect']:
-        fn = {"diseasome": "bio-diseasome.mtx",
-            "usroads": "road-usroads.mtx",
-            "mn-roads": "mn-roads.mtx",
-            "infect": "infect-dublin.edges"}
-        graph = nx.Graph() if args.graph_type == "undirected" else nx.DiGraph()
-        with open("data/{}".format(fn[args.dataset]), "r") as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                a, b = line.strip().split(" ")
-                graph.add_edge(int(a), int(b))
-        dataset = [graph]
-        task = 'graph'
-    elif args.dataset.startswith('plant-'):
-        size = int(args.dataset.split("-")[-1])
-        dataset = make_plant_dataset(size)
-        task = 'graph'
+            dataset = [graph]
+            task = 'graph'
+        elif args.dataset.startswith('plant-'):
+            size = int(args.dataset.split("-")[-1])
+            dataset = make_plant_dataset(size)
+            task = 'graph'
 
-    logger.info("\nStarting pattern mining...")
-    pattern_growth(dataset, task, args)
-    logger.info("\n✓ Pattern mining complete!")
+        # Adaptive mode selector
+        if isinstance(dataset, list) and len(dataset) > 0 and isinstance(dataset[0], (nx.Graph, nx.DiGraph)):
+             num_nodes = sum(len(g) for g in dataset)
+        else:
+             num_nodes = 0 
+        
+        threshold = getattr(args, 'auto_streaming_threshold', 100000)
+        
+        # Check if streaming should be used (large graph OR many trials)
+        use_streaming = (num_nodes > threshold or args.n_trials > 2000)
+        
+        logger.info("\nStarting pattern mining...")
+        if use_streaming:
+            logger.info(f"Adaptive Mode: Enabling Batch Processing for {num_nodes} nodes. 🚀")
+            
+            # Automatically tune workers for performance vs stability
+            total_nodes = num_nodes
+            original_workers = args.streaming_workers
+            
+            if total_nodes > 3500000:
+                args.streaming_workers = 0
+                reason = "Maximum Stability (Sequential)"
+            elif total_nodes > 500000:
+                args.streaming_workers = min(original_workers, 2)
+                reason = "Balanced Performance (2 workers)"
+            else: 
+                args.streaming_workers = original_workers
+                reason = "Maximum Speed ({} workers)".format(args.streaming_workers)
+
+            if args.streaming_workers != original_workers:
+                logger.info(f"⚠ SMART SCALING: Graph size {total_nodes:,} nodes.")
+                logger.info(f"  Adjusting streaming_workers: {original_workers} -> {args.streaming_workers} for {reason}.")
+            
+            # Ensure search phase uses the same optimized worker count
+            args.n_workers = args.streaming_workers
+            if args.n_workers <= 0:
+                logger.info("Sequential Search Mode enabled (n_workers=0)")
+            # Pass dataset and then clear local reference
+            pattern_growth_streaming(dataset, task, args)
+            if isinstance(dataset, list):
+                dataset.clear()
+            dataset = None
+        else:
+            logger.info("Adaptive Mode: Standard Sequential Processing.")
+            if not hasattr(args, 'n_workers'):
+                args.n_workers = 1
+            pattern_growth(dataset, task, args)
+        
+        import gc
+        gc.collect()
+        logger.info("\n✓ Pattern mining complete!")
+
+    except Exception as e:
+        print(f"FATAL ERROR in main: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == '__main__':
+    # Docker memory fix
+    import torch.multiprocessing as mp
+    try:
+        mp.set_sharing_strategy('file_system')
+    except:
+        pass
     main()

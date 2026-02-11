@@ -11,3 +11,4 @@ tqdm == 4.43.0
 fastapi
 uvicorn
 python-multipart
+requests

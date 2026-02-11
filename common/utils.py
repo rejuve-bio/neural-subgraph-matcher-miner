@@ -180,15 +180,6 @@ def gen_baseline_queries_mfinder(queries, targets, n_samples=10000,
             out.append(random.choice(neighs))
     return out
 
-device_cache = None
-def get_device():
-    global device_cache
-    if device_cache is None:
-        device_cache = torch.device("cuda") if torch.cuda.is_available() \
-            else torch.device("cpu")
-        #device_cache = torch.device("cpu")
-    return device_cache
-
 def parse_optimizer(parser):
     opt_parser = parser.add_argument_group()
     opt_parser.add_argument('--opt', dest='opt', type=str,
