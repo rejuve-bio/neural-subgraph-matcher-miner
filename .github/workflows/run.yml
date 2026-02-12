@@ -73,7 +73,7 @@ jobs:
                 --out_path=results/patterns.pkl
 
               echo 'Sanity checking beam output...'
-              python - << 'EOF'
+python - << 'EOF'
 import os, pickle, sys
 
 path = 'results/patterns.pkl'
