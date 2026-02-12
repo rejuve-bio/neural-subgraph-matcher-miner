@@ -13,21 +13,21 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4   # ← updated to latest version
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3   # ← newer version
+        uses: docker/setup-buildx-action@v3
 
       - name: Cache Docker layers
-        uses: actions/cache@v4   # ← updated
+        uses: actions/cache@v4
         with:
           path: /tmp/.buildx-cache
           key: ${{ runner.os }}-buildx-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-buildx-
 
-      - name: Build Docker image
-        uses: docker/build-push-action@v6   # ← latest major version
+      - name: Build & load Docker image
+        uses: docker/build-push-action@v6
         with:
           context: .
           load: true
@@ -35,40 +35,37 @@ jobs:
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 
-      - name: Move updated cache
+      - name: Update cache directory
         run: |
-          rm -rf /tmp/.buildx-cache
+          rm -rf /tmp/.buildx-cache || true
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache || true
 
-      # Create output folders **before** running container
-      - name: Prepare output directories
+      - name: Create output directories
         run: |
           mkdir -p plots/cluster
           mkdir -p results
           chmod -R 777 plots results
-          ls -ld plots results
 
-      - name: Show CPU information
+      - name: Show basic environment info
         run: |
-          echo "Total CPUs : $(nproc)"
-          echo "Memory     : $(free -h)"
-          echo "Disk space : $(df -h .)"
+          echo "CPUs: $(nproc)"
+          echo "pwd: $(pwd)"
+          ls -la .
 
-      - name: Run decoder (beam search)
+      - name: Run decoder + basic validation
         run: |
-          set -x   # ← show commands → easier debugging
+          set -x
 
           docker run --rm \
             -v "${{ github.workspace }}:/app" \
             -e PYTHONUNBUFFERED=1 \
-            --cpus=4 \          # optional: limit to 4 cores
             decoder-image:latest \
             bash -c "
               set -e -x
 
               cd /app
 
-              echo 'Starting decoder (beam search)...'
+              echo 'Running beam search decoder ...'
               python -m subgraph_mining.decoder \
                 --dataset=metta.pkl \
                 --search_strategy=beam \
@@ -77,15 +74,17 @@ jobs:
                 --node_anchored \
                 --out_path=/app/results/patterns-beam.pkl
 
-              echo '────────────────────────────────────────'
-              echo 'Sanity checking beam output...'
+              echo '──────────────────────────────────────'
+              echo 'Sanity checking output file ...'
 
               python -c '
 import os, pickle, sys
+
 path = \"/app/results/patterns-beam.pkl\"
+
 if not os.path.exists(path):
     print(f\"ERROR: File not found → {path}\")
-    print(\"Directory content:\")
+    print(\"ls -la /app/results:\")
     os.system(\"ls -la /app/results\")
     sys.exit(1)
 
@@ -93,39 +92,38 @@ with open(path, \"rb\") as f:
     patterns = pickle.load(f)
 
 if not patterns:
-    print(\"ERROR: patterns list is empty!\")
+    print(\"ERROR: patterns list is empty\")
     sys.exit(2)
 
 print(f\"OK: Beam search produced {len(patterns)} patterns\")
               '
 
-              echo '────────────────────────────────────────'
-              echo 'Output directories content:'
+              echo '──────────────────────────────────────'
+              echo 'Final directory listing:'
               ls -la /app/results || true
               ls -la /app/plots   || true
             "
 
-      - name: List generated files (debug)
+      - name: Show generated files (host side)
         run: |
-          echo "Workspace root:"
-          ls -la .
-          echo "Results:"
-          ls -R results || echo "(empty or missing)"
-          echo "Plots:"
-          ls -R plots   || echo "(empty or missing)"
+          echo "Results directory:"
+          ls -la results || echo "(directory missing)"
+          echo ""
+          echo "Plots directory:"
+          ls -la plots || echo "(directory missing)"
 
-      - name: Upload artifacts (plots & results)
+      - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: decoder-output
+          name: decoder-results-and-plots
           path: |
             plots/
             results/
           retention-days: 7
           if-no-files-found: warn
 
-      - name: Upload logs & errors (if any)
+      - name: Upload any log files (if created)
         if: always()
         uses: actions/upload-artifact@v4
         with:
