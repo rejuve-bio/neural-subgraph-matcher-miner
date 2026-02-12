@@ -1,5 +1,4 @@
 name: Run Decoder
-
 on:
   push:
     branches: [main , test/visualizer-refactor]
@@ -93,8 +92,8 @@ print(f'OK: Beam search produced {len(patterns)} patterns')
 EOF
 
               echo 'Checking output directories...'
-              ls -la /app/plots/cluster || true
-              ls -la /app/results || true
+              ls -la /app/plots/cluster 
+              ls -la /app/results 
             "
       # - name: Run pattern counter in Docker container
       #   run: |
