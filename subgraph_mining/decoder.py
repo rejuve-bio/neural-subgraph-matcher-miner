@@ -51,9 +51,9 @@ import uuid
 if os.getcwd() not in sys.path:
     sys.path.append(os.getcwd())
 
-from subgraph_mining.search_agents import (
-    GreedySearchAgent, MCTSSearchAgent, 
-    MemoryEfficientMCTSAgent, MemoryEfficientGreedyAgent, 
+from subgraph_mining.search import (
+    GreedySearchAgent, MCTSSearchAgent,
+    MemoryEfficientMCTSAgent, MemoryEfficientGreedyAgent,
     BeamSearchAgent
 )
 
