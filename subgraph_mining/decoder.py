@@ -82,7 +82,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-
 # Dataset class for parallel processing with on-the-fly sampling
 def extract_neighborhood(dataset_graph, seed, args, is_directed):
     """
@@ -207,7 +206,7 @@ def generate_target_embeddings(dataset, model, args):
     dataset_graph = dataset[0] 
     
     # select seeds from the FULL graph first to ensure we start exactly where intended.
-    all_nodes = sorted(list(dataset_graph.nodes()), key=str)
+    all_nodes = sorted(list(dataset_graph.nodes()))
     
     # Filter out "dead seeds" (isolated nodes) that cannot contain patterns
     # This prevents DeepSnap from crashing on 0-edge subgraphs
@@ -825,6 +824,20 @@ def update_run_index(json_path, args):
         json.dump(index, f, indent=2)
 def save_and_visualize_all_instances(agent, args):
     try:
+        # Clear plots/cluster so only this run's output is present (no leftover from previous run)
+        output_dir = os.path.join("plots", "cluster")
+        if os.path.exists(output_dir):
+            import shutil
+            try:
+                for item in os.listdir(output_dir):
+                    item_path = os.path.join(output_dir, item)
+                    if os.path.isfile(item_path):
+                        os.remove(item_path)
+                    elif os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+            except Exception as e:
+                logger.warning("Could not clear plots/cluster: %s", e)
+
         logger.info("="*70)
         logger.info("SAVING AND VISUALIZING ALL PATTERN INSTANCES")
         logger.info("="*70)
@@ -883,8 +896,13 @@ def save_and_visualize_all_instances(agent, args):
         total_instances = 0
         total_unique_instances = 0
         total_visualizations = 0
+        total_sizes = args.max_pattern_size - args.min_pattern_size + 1
         
-        for size in range(args.min_pattern_size, args.max_pattern_size + 1):
+        # Use out_batch_size from args; ensure at least 1 so we always take up to N per size
+        out_batch_size = max(1, getattr(args, 'out_batch_size', 3))
+        logger.info("save_and_visualize: using out_batch_size=%s (up to %s patterns per size)", out_batch_size, out_batch_size)
+
+        for size_idx, size in enumerate(range(args.min_pattern_size, args.max_pattern_size + 1)):
             if size not in agent.counts:
                 logger.debug(f"No patterns found for size {size}")
                 continue
@@ -895,9 +913,9 @@ def save_and_visualize_all_instances(agent, args):
                 reverse=True
             )
             
-            logger.info(f"Size {size}: {len(sorted_patterns)} unique pattern types")
+            logger.info(f"Size {size}: {len(sorted_patterns)} unique pattern types (taking up to {out_batch_size})")
             
-            for rank, (wl_hash, instances) in enumerate(sorted_patterns[:args.out_batch_size], 1):
+            for rank, (wl_hash, instances) in enumerate(sorted_patterns[:out_batch_size], 1):
                 pattern_key = f"size_{size}_rank_{rank}"
                 original_count = len(instances)
                 
@@ -1006,6 +1024,10 @@ def save_and_visualize_all_instances(agent, args):
                         traceback.print_exc()
                 else:
                     logger.warning(f"    ⚠ Skipping visualization (visualizer not available)")
+            # Progress: saving instances + creating HTML visualizations (plots/cluster/)
+            current_done = size_idx + 1
+            pct = int(current_done / total_sizes * 100)
+            print(f"[MINER_PROGRESS] phase=saving current={current_done} total={total_sizes} percent={pct}", flush=True)
         
         ensure_directories()
         
@@ -1157,7 +1179,8 @@ def pattern_growth(dataset, task, args, precomputed_data=None, preloaded_model=N
         
         elif args.sample_method == "tree":
             start_time_sample = time.time()
-            for j in tqdm(range(args.n_neighborhoods)):
+            n_n = args.n_neighborhoods
+            for j in tqdm(range(n_n)):
                 graph, neigh = utils.sample_neigh(graphs,
                     random.randint(args.min_neighborhood_size,
                         args.max_neighborhood_size), args.graph_type)
@@ -1167,6 +1190,8 @@ def pattern_growth(dataset, task, args, precomputed_data=None, preloaded_model=N
                 neighs.append(neigh)
                 if args.node_anchored:
                     anchors.append(0)
+                pct = int((j + 1) / n_n * 100) if n_n else 0
+                print(f"[MINER_PROGRESS] phase=sampling current={j+1} total={n_n} percent={pct}", flush=True)
 
     #  Use precomputed embeddings if available
     if precomputed_data:
@@ -1226,12 +1251,20 @@ def pattern_growth(dataset, task, args, precomputed_data=None, preloaded_model=N
             analyze=args.analyze, model_type=args.method_type,
             out_batch_size=args.out_batch_size, beam_width=args.beam_width)
     
+    # Ensure all agents have args (workers need it for out_batch_size / diversity)
+    if not hasattr(agent, 'args') or agent.args is None:
+        agent.args = args
+    
     # Run search
-    logger.info(f"Running search with {args.n_trials} trials...")
+    logger.info(f"Running search with {args.n_trials} trials... (out_batch_size={args.out_batch_size})")
     out_graphs = agent.run_search(args.n_trials)
     
     elapsed = time.time() - start_time
     logger.info(f"Total time: {elapsed:.2f}s ({int(elapsed)//60}m {int(elapsed)%60}s)")
+    if hasattr(agent, 'counts') and agent.counts:
+        for sz in range(args.min_pattern_size, args.max_pattern_size + 1):
+            n_types = len(agent.counts.get(sz, {}))
+            logger.info("Size %s: %s unique pattern types (requested up to %s)", sz, n_types, args.out_batch_size)
 
     if hasattr(agent, 'counts') and agent.counts:
         logger.info("\nSaving all pattern instances...")
@@ -1320,6 +1353,21 @@ def main():
         
         args = parser.parse_args()
 
+        # Ensure user config is respected: clamp so max >= min and out_batch_size >= 1
+        min_ps = getattr(args, 'min_pattern_size', 3)
+        max_ps = getattr(args, 'max_pattern_size', 5)
+        out_bs = getattr(args, 'out_batch_size', 3)
+        if max_ps < min_ps:
+            max_ps = min_ps
+            args.max_pattern_size = max_ps
+        if out_bs < 1:
+            out_bs = 1
+            args.out_batch_size = out_bs
+
+        logger.info(
+            "Decoder config: min_pattern_size=%s max_pattern_size=%s out_batch_size=%s (pattern sizes %s..%s inclusive, up to %s per size)",
+            min_ps, max_ps, out_bs, min_ps, max_ps, out_bs,
+        )
         logger.info(f"Using dataset: {args.dataset}")
         logger.info(f"Graph type: {args.graph_type}")
 
