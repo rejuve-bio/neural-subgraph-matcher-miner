@@ -328,7 +328,8 @@ def pattern_growth(dataset, task, args, precomputed_data=None, preloaded_model=N
         
         elif args.sample_method == "tree":
             start_time_sample = time.time()
-            for j in tqdm(range(args.n_neighborhoods)):
+            n_n = args.n_neighborhoods
+            for j in tqdm(range(n_n)):
                 graph, neigh = utils.sample_neigh(graphs,
                     random.randint(args.min_neighborhood_size,
                         args.max_neighborhood_size), args.graph_type)
@@ -338,6 +339,8 @@ def pattern_growth(dataset, task, args, precomputed_data=None, preloaded_model=N
                 neighs.append(neigh)
                 if args.node_anchored:
                     anchors.append(0)
+                pct = int((j + 1) / n_n * 100) if n_n else 0
+                print(f"[MINER_PROGRESS] phase=sampling current={j+1} total={n_n} percent={pct}", flush=True)
 
     #  Use precomputed embeddings if available
     if precomputed_data:
@@ -397,12 +400,20 @@ def pattern_growth(dataset, task, args, precomputed_data=None, preloaded_model=N
             analyze=args.analyze, model_type=args.method_type,
             out_batch_size=args.out_batch_size, beam_width=args.beam_width)
     
+    # Ensure all agents have args (workers need it for out_batch_size / diversity)
+    if not hasattr(agent, 'args') or agent.args is None:
+        agent.args = args
+    
     # Run search
-    logger.info(f"Running search with {args.n_trials} trials...")
+    logger.info(f"Running search with {args.n_trials} trials... (out_batch_size={args.out_batch_size})")
     out_graphs = agent.run_search(args.n_trials)
     
     elapsed = time.time() - start_time
     logger.info(f"Total time: {elapsed:.2f}s ({int(elapsed)//60}m {int(elapsed)%60}s)")
+    if hasattr(agent, 'counts') and agent.counts:
+        for sz in range(args.min_pattern_size, args.max_pattern_size + 1):
+            n_types = len(agent.counts.get(sz, {}))
+            logger.info("Size %s: %s unique pattern types (requested up to %s)", sz, n_types, args.out_batch_size)
 
     if hasattr(agent, 'counts') and agent.counts:
         logger.info("\nSaving all pattern instances...")
@@ -486,6 +497,21 @@ def main():
         
         args = parser.parse_args()
 
+        # Ensure user config is respected: clamp so max >= min and out_batch_size >= 1
+        min_ps = getattr(args, 'min_pattern_size', 3)
+        max_ps = getattr(args, 'max_pattern_size', 5)
+        out_bs = getattr(args, 'out_batch_size', 3)
+        if max_ps < min_ps:
+            max_ps = min_ps
+            args.max_pattern_size = max_ps
+        if out_bs < 1:
+            out_bs = 1
+            args.out_batch_size = out_bs
+
+        logger.info(
+            "Decoder config: min_pattern_size=%s max_pattern_size=%s out_batch_size=%s (pattern sizes %s..%s inclusive, up to %s per size)",
+            min_ps, max_ps, out_bs, min_ps, max_ps, out_bs,
+        )
         logger.info(f"Using dataset: {args.dataset}")
         logger.info(f"Graph type: {args.graph_type}")
 
