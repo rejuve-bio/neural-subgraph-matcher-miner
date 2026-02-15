@@ -64,16 +64,8 @@ from subgraph_mining.embedding import (
     LazyNeighborhoodGraphList,
     collate_fn,
     generate_target_embeddings
-)
-
-from subgraph_mining.visualization import (
-    VISUALIZER_AVAILABLE,
-    visualize_pattern_graph,
-    save_instances_to_json,
-    update_run_index,
-    save_and_visualize_all_instances
-)
-
+    )
+from visualizer.visualizer import save_and_visualize_all_instances
 
 import random
 from scipy.io import mmread
