@@ -235,9 +235,7 @@ def pattern_growth_streaming(dataset, task, args):
 def pattern_growth(dataset, task, args, precomputed_data=None, preloaded_model=None):
     """Main pattern mining function."""
     start_time = time.time()
-    
-    ensure_directories()
-    
+        
     # Load model (or use preloaded)
     if preloaded_model:
         model = preloaded_model
@@ -429,11 +427,7 @@ def pattern_growth(dataset, task, args, precomputed_data=None, preloaded_model=N
 
     count_by_size = defaultdict(int)
     warnings.filterwarnings("ignore", category=np.VisibleDeprecationWarning)
-    
-    successful_visualizations = 0
-    
-    ensure_directories()
-    
+            
     logger.info(f"\nSaving representative patterns to: {args.out_path}")
     with open(args.out_path, "wb") as f:
         pickle.dump(out_graphs, f, protocol=pickle.HIGHEST_PROTOCOL)
