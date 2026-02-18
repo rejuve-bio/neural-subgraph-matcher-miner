@@ -41,7 +41,7 @@ DEFAULT_OUTPUT_DIR = "plots/cluster"
 DEFAULT_TEMPLATE_NAME = "template.html"
 
 # Node and edge type detection priority
-NODE_TYPE_KEYS = ['type', 'label', 'category', 'kind', 'class']
+NODE_TYPE_KEYS = ['type', 'label', 'node_type', 'category', 'kind', 'class']
 EDGE_TYPE_KEYS = ['type', 'label', 'edge_label', 'relation', 'relationship', 
                   'edge_type', 'predicate', 'category', 'kind', 'name']
 
