@@ -13,3 +13,10 @@ results/
 orca/
 core
 deepsnap-experimental/
+
+.python-version
+# ckpt/
+
+# tuning_runs/
+# for now just ignore all tuning trial checkpoints to avoid much space issue over git
+tuning_runs/*/trial-*/
