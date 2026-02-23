@@ -762,13 +762,20 @@ class BeamSearchAgent(SearchAgent):
             self.min_pattern_size, self.max_pattern_size + 1)}
         self.cand_patterns = defaultdict(list)
         self.pattern_counts = defaultdict(lambda: defaultdict(list))
-        self.trials_completed = 0
+        # Expose counts under the same name used by other agents so that
+        # downstream code (e.g. saving/visualizing all instances) works.
+        self.counts = self.pattern_counts
         self.current_size = self.min_pattern_size
         self.analyze_embs = [] if self.analyze else None
     
     def is_search_done(self):
-        """Check if search is complete."""
-        return self.trials_completed >= self.n_trials
+        """Check if search is complete.
+
+        For beam search we consider the search done once we have grown
+        patterns up to max_pattern_size. The n_trials argument is not
+        used as a stopping criterion here.
+        """
+        return self.current_size > self.max_pattern_size
     
     def _compute_pattern_score(self, pattern, anchor=None):
         """Compute score for a pattern using the trained model."""
@@ -881,7 +888,10 @@ class BeamSearchAgent(SearchAgent):
         if not self.pattern_beams[self.current_size]:
             # Sample seed nodes and create initial patterns
             initial_beam = []
-            num_seeds = min(self.beam_width * 2, self.n_trials - self.trials_completed)
+            # For beam search we do not use n_trials as a hard stopping
+            # criterion. Simply generate a small fixed multiple of the
+            # beam width as initial seeds.
+            num_seeds = self.beam_width * 2
             
             for _ in range(num_seeds):
                 graph_idx, seed_node = self._sample_seed_node()
@@ -932,7 +942,6 @@ class BeamSearchAgent(SearchAgent):
             # Sort and keep top beam_width patterns
             self.pattern_beams[self.current_size] = sorted(
                 initial_beam, key=lambda x: x[0])[:self.beam_width]
-            self.trials_completed += len(initial_beam)
         
         # Grow patterns
         current_beam = self.pattern_beams[self.current_size]
@@ -959,10 +968,9 @@ class BeamSearchAgent(SearchAgent):
                         [pattern], anchors=anchors)).squeeze(0)
                     self.analyze_embs.append(emb.detach().cpu().numpy())
         
-        # Move to next pattern size or wrap around
+        # Move to next pattern size; run_search will stop once we have
+        # advanced beyond max_pattern_size (see is_search_done).
         self.current_size += 1
-        if self.current_size > self.max_pattern_size:
-            self.current_size = self.min_pattern_size
     
     def finish_search(self):
         """Finish search and return identified patterns."""
