@@ -1132,7 +1132,13 @@ def pattern_growth(dataset, task, args, precomputed_data=None, preloaded_model=N
                 if 'id' not in graph.nodes[node]:
                     graph.nodes[node]['id'] = str(node)
         graphs.append(graph)
-    
+        
+    if isinstance(dataset, LazyNeighborhoodGraphList):
+        import gc
+        dataset.dataset_graph = None
+        gc.collect()
+        logger.info("Freed main graph from RAM (Fix 2); search phase uses only neighborhood list.")
+
     if args.use_whole_graphs:
         neighs = graphs
     else:
