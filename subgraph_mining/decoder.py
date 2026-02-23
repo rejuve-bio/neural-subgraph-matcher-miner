@@ -1132,12 +1132,13 @@ def pattern_growth(dataset, task, args, precomputed_data=None, preloaded_model=N
                 if 'id' not in graph.nodes[node]:
                     graph.nodes[node]['id'] = str(node)
         graphs.append(graph)
-        
+
+    # After this point we only use `graphs` and `embs`; the agent never needs the full graph.
     if isinstance(dataset, LazyNeighborhoodGraphList):
         import gc
         dataset.dataset_graph = None
         gc.collect()
-        logger.info("Freed main graph from RAM (Fix 2); search phase uses only neighborhood list.")
+        logger.info("Freed main graph from RAM ; search phase uses only neighborhood list.")
 
     if args.use_whole_graphs:
         neighs = graphs
@@ -1462,53 +1463,36 @@ def main():
             dataset = make_plant_dataset(size)
             task = 'graph'
 
-        # Adaptive mode selector
         if isinstance(dataset, list) and len(dataset) > 0 and isinstance(dataset[0], (nx.Graph, nx.DiGraph)):
-             num_nodes = sum(len(g) for g in dataset)
+            num_nodes = sum(len(g) for g in dataset)
         else:
-             num_nodes = 0 
-        
-        threshold = getattr(args, 'auto_streaming_threshold', 100000)
-        
-        # Check if streaming should be used (large graph OR many trials)
-        use_streaming = (num_nodes > threshold or args.n_trials > 2000)
-        
-        logger.info("\nStarting pattern mining...")
-        if use_streaming:
-            logger.info(f"Adaptive Mode: Enabling Batch Processing for {num_nodes} nodes. 🚀")
-            
-            # Automatically tune workers for performance vs stability
-            total_nodes = num_nodes
-            original_workers = args.streaming_workers
-            
-            if total_nodes > 3500000:
-                args.streaming_workers = 0
-                reason = "Maximum Stability (Sequential)"
-            elif total_nodes > 500000:
-                args.streaming_workers = min(original_workers, 2)
-                reason = "Balanced Performance (2 workers)"
-            else: 
-                args.streaming_workers = original_workers
-                reason = "Maximum Speed ({} workers)".format(args.streaming_workers)
+            num_nodes = 0
 
-            if args.streaming_workers != original_workers:
-                logger.info(f"⚠ SMART SCALING: Graph size {total_nodes:,} nodes.")
-                logger.info(f"  Adjusting streaming_workers: {original_workers} -> {args.streaming_workers} for {reason}.")
-            
-            # Ensure search phase uses the same optimized worker count
-            args.n_workers = args.streaming_workers
-            if args.n_workers <= 0:
-                logger.info("Sequential Search Mode enabled (n_workers=0)")
-            # Pass dataset and then clear local reference
-            pattern_growth_streaming(dataset, task, args)
-            if isinstance(dataset, list):
-                dataset.clear()
-            dataset = None
+        logger.info("\nStarting pattern mining (batch processing)...")
+        # Tune workers by graph size for stability
+        total_nodes = num_nodes
+        original_workers = args.streaming_workers
+        if total_nodes > 3500000:
+            args.streaming_workers = 0
+            reason = "Maximum Stability (Sequential)"
+        elif total_nodes > 500000:
+            args.streaming_workers = min(original_workers, 2)
+            reason = "Balanced Performance (2 workers)"
         else:
-            logger.info("Adaptive Mode: Standard Sequential Processing.")
-            if not hasattr(args, 'n_workers'):
-                args.n_workers = 1
-            pattern_growth(dataset, task, args)
+            args.streaming_workers = original_workers
+            reason = "Maximum Speed ({} workers)".format(args.streaming_workers)
+
+        if args.streaming_workers != original_workers:
+            logger.info("Worker scaling: %s nodes -> streaming_workers %s -> %s (%s).",
+                total_nodes, original_workers, args.streaming_workers, reason)
+        args.n_workers = args.streaming_workers
+        if args.n_workers <= 0:
+            logger.info("Sequential search (n_workers=0)")
+
+        pattern_growth_streaming(dataset, task, args)
+        if isinstance(dataset, list):
+            dataset.clear()
+        dataset = None
         
         import gc
         gc.collect()
