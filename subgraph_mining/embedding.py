@@ -30,7 +30,7 @@ def extract_neighborhood(dataset_graph, seed, args, is_directed):
         nodes_in_bubble.append(curr)
 
         if dist < args.radius:
-            neighbors = dataset_graph.successors(curr) if is_directed else dataset_graph.neighbors(curr)
+            neighbors = (set(dataset_graph.successors(curr)) | set(dataset_graph.predecessors(curr))) if is_directed else dataset_graph.neighbors(curr)
             for neighbor in neighbors:
                 if neighbor not in visited:
                     visited.add(neighbor)
@@ -145,7 +145,7 @@ def generate_target_embeddings(dataset, model, args):
     # This prevents DeepSnap from crashing on 0-edge subgraphs
     is_directed = (args.graph_type == "directed")
     if is_directed:
-        all_nodes = [n for n in all_nodes if dataset_graph.out_degree(n) > 0]
+        all_nodes = [n for n in all_nodes if dataset_graph.out_degree(n) > 0 or dataset_graph.in_degree(n) > 0]
     else:
         all_nodes = [n for n in all_nodes if dataset_graph.degree(n) > 0]
         
