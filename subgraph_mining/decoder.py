@@ -822,6 +822,52 @@ def update_run_index(json_path, args):
     # Save updated index  
     with open(index_file, 'w') as f:  
         json.dump(index, f, indent=2)
+
+
+def _semantic_node_match(n1, n2):
+    return (
+        int(n1.get("anchor", 0)) == int(n2.get("anchor", 0))
+        and int(n1.get("label_id", 0)) == int(n2.get("label_id", 0))
+        and str(n1.get("label", "unknown")) == str(n2.get("label", "unknown"))
+    )
+
+
+def _semantic_edge_match(e1, e2):
+    return (
+        int(e1.get("type_id", 0)) == int(e2.get("type_id", 0))
+        and str(e1.get("type_str", e1.get("type", "unknown")))
+        == str(e2.get("type_str", e2.get("type", "unknown")))
+    )
+
+
+def _semantic_isomorphic(g1, g2):
+    if g1.is_directed() != g2.is_directed():
+        return False
+    graph_matcher = (
+        nx.algorithms.isomorphism.DiGraphMatcher
+        if g1.is_directed()
+        else nx.algorithms.isomorphism.GraphMatcher
+    )
+    return graph_matcher(
+        g1, g2, node_match=_semantic_node_match, edge_match=_semantic_edge_match
+    ).is_isomorphic()
+
+
+def _split_by_semantic_isomorphism(instances):
+    """Split a hash bucket into exact semantic isomorphism groups."""
+    groups = []
+    for inst in instances:
+        placed = False
+        for group in groups:
+            if _semantic_isomorphic(inst, group[0]):
+                group.append(inst)
+                placed = True
+                break
+        if not placed:
+            groups.append([inst])
+    return groups
+
+
 def save_and_visualize_all_instances(agent, args):
     try:
         # Clear plots/cluster so only this run's output is present (no leftover from previous run)
@@ -907,15 +953,22 @@ def save_and_visualize_all_instances(agent, args):
                 logger.debug(f"No patterns found for size {size}")
                 continue
             
+            grouped_patterns = []
+            for wl_hash, instances in agent.counts[size].items():
+                for group_idx, group_instances in enumerate(
+                    _split_by_semantic_isomorphism(instances)
+                ):
+                    grouped_patterns.append(((wl_hash, group_idx), group_instances))
+
             sorted_patterns = sorted(
-                agent.counts[size].items(), 
-                key=lambda x: len(x[1]), 
+                grouped_patterns,
+                key=lambda x: len(x[1]),
                 reverse=True
             )
             
             logger.info(f"Size {size}: {len(sorted_patterns)} unique pattern types (taking up to {out_batch_size})")
             
-            for rank, (wl_hash, instances) in enumerate(sorted_patterns[:out_batch_size], 1):
+            for rank, (hash_key, instances) in enumerate(sorted_patterns[:out_batch_size], 1):
                 pattern_key = f"size_{size}_rank_{rank}"
                 original_count = len(instances)
                 
