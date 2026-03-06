@@ -1,0 +1,22 @@
+{
+  "name": "graph-visualizer-ui",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "vue": "^3.3.4",
+    "jspdf": "^2.5.1",
+    "pdf-lib": "^1.17.1",
+    "lucide-vue-next": "^0.263.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^4.2.3",
+    "vite": "^4.4.5",
+    "vite-plugin-singlefile": "^0.13.5"
+  }
+}
