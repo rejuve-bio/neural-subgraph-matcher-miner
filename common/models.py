@@ -161,7 +161,7 @@ class SkipLastGNN(nn.Module):
 
         #x = self.pre_mp(x)
         if self.feat_preprocess is not None:
-            if not hasattr(data, "preprocessed"):
+            if not getattr(data, "preprocessed", False):
                 data = self.feat_preprocess(data)
                 data.preprocessed = True
         x, edge_index, batch = data.node_feature, data.edge_index, data.batch

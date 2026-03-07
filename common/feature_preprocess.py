@@ -36,7 +36,7 @@ def configure_feature_augment(include_label_id=False, label_feature_dim=16):
     global FEATURE_AUGMENT, FEATURE_AUGMENT_DIMS
     FEATURE_AUGMENT, FEATURE_AUGMENT_DIMS = [], []
     if include_label_id:
-        FEATURE_AUGMENT.append("label_id")
+        FEATURE_AUGMENT.append("label_feature")
         FEATURE_AUGMENT_DIMS.append(int(label_feature_dim))
 
 def norm(edge_index, num_nodes, edge_weight=None, improved=False,
@@ -140,7 +140,7 @@ class FeatureAugment(nn.Module):
                     graph.G.nodes[v]["node_feature"] = torch.ones(feature_dim)
             return graph
 
-        def label_id_fun(graph, feature_dim):
+        def label_feature_fun(graph, feature_dim):
             raw_ids = []
             for v in graph.G.nodes:
                 label_id = int(graph.G.nodes[v].get("label_id", 0))
@@ -150,9 +150,9 @@ class FeatureAugment(nn.Module):
                     # Keep UNK at bucket 0; hash all other ids into fixed buckets.
                     raw_ids.append(0 if label_id == 0 else 1 + (label_id % (feature_dim - 1)))
             if feature_dim <= 1:
-                graph.label_id = torch.tensor(raw_ids, dtype=torch.float).unsqueeze(1)
+                graph.label_feature = torch.tensor(raw_ids, dtype=torch.float).unsqueeze(1)
             else:
-                graph.label_id = self._id_one_hot_tensor(raw_ids, one_hot_dim=feature_dim)
+                graph.label_feature = self._id_one_hot_tensor(raw_ids, one_hot_dim=feature_dim)
             return graph
 
         self.node_features_base_fun = node_features_base_fun
@@ -164,7 +164,7 @@ class FeatureAugment(nn.Module):
             'node_clustering_coefficient': clustering_coefficient_fun,
             "motif_counts": motif_counts_fun,
             "identity": identity_fun,
-            "label_id": label_id_fun}
+            "label_feature": label_feature_fun}
 
     def register_feature_fun(name, feature_fun):
         self.node_feature_funs[name] = feature_fun
@@ -248,14 +248,14 @@ class Preprocess(nn.Module):
 
     def forward(self, batch):
         if AUGMENT_METHOD == 'concat':
-            feature_list = [batch.node_feature]
+            feature_list = [batch.node_feature.float()]
             for key in FEATURE_AUGMENT:
-                feature_list.append(batch[key])
+                feature_list.append(batch[key].float())
             batch.node_feature = torch.cat(feature_list, dim=-1)
         elif AUGMENT_METHOD == 'add':
             for key in FEATURE_AUGMENT:
                 batch.node_feature = batch.node_feature + self.module_dict[key](
-                        batch[key])
+                        batch[key].float())
         else:
             raise ValueError('Unknown feature augmentation method {}.'.format(
                     AUGMENT_METHOD))

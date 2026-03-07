@@ -40,6 +40,12 @@ else:
     from subgraph_matching.config import parse_encoder
 from subgraph_matching.test import validation
 
+def _configure_runtime_features(args):
+    use_label_features = args.use_label_features or args.dataset.startswith("syn-semantic")
+    feature_preprocess.configure_feature_augment(
+        include_label_id=use_label_features,
+        label_feature_dim=args.label_feature_dim)
+
 def build_model(args):
     # build model
     if args.method_type == "order":
@@ -97,6 +103,7 @@ def train(args, model,in_queue, out_queue):
     in_queue: input queue to an intersection computation worker
     out_queue: output queue to an intersection computation worker
     """
+    _configure_runtime_features(args)
     scheduler, opt = utils.build_optimizer(args, model.parameters())
     if args.method_type == "order":
         clf_opt = optim.Adam(model.clf_model.parameters(), lr=args.lr)
@@ -233,10 +240,7 @@ def main(force_test=False):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
 
-    use_label_features = args.use_label_features or args.dataset.startswith("syn-semantic")
-    feature_preprocess.configure_feature_augment(
-        include_label_id=use_label_features,
-        label_feature_dim=args.label_feature_dim)
+    _configure_runtime_features(args)
 
     if force_test:
         args.test = True
