@@ -49,7 +49,13 @@ def validation(args, model, test_pts, logger, batch_n, epoch, verbose=False):
                         raw_pred[pos_a.num_graphs + i] = MAX_MARGIN_SCORE
 
             if args.method_type == "order":
-                pred = model.clf_model(raw_pred.unsqueeze(1)).argmax(dim=-1)
+                threshold_mode = getattr(args, "order_threshold_mode", "clf")
+                if threshold_mode == "margin":
+                    margin_factor = float(getattr(args, "order_margin_factor", 0.5))
+                    threshold = float(args.margin) * margin_factor
+                    pred = (raw_pred <= threshold).long()
+                else:
+                    pred = model.clf_model(raw_pred.unsqueeze(1)).argmax(dim=-1)
                 raw_pred *= -1
             elif args.method_type == "ensemble":
                 pred = torch.stack([m.clf_model(

@@ -45,8 +45,12 @@ def parse_encoder(parser, arg_str=None):
                     help="Path to the .pkl file containing the graph to be used for training")
     enc_parser.add_argument('--semantic_preset', type=str,
                     help='Semantic synthetic preset: biology, ecommerce, or social')
+    enc_parser.add_argument('--val_semantic_preset', type=str,
+                    help='Optional heldout semantic preset for validation/test generation')
     enc_parser.add_argument('--label_neg_ratio', type=float,
                     help='Fraction of negatives that are label-corruption negatives')
+    enc_parser.add_argument('--hard_negative_ratio', type=float,
+                    help='Fraction of structural negatives sampled as harder near-miss negatives')
     enc_parser.add_argument('--label_noise', type=float,
                     help='Label corruption rate during semantic synthetic generation')
     enc_parser.add_argument('--use_label_features', action="store_true",
@@ -55,6 +59,10 @@ def parse_encoder(parser, arg_str=None):
                     help='One-hot dimension for label_id feature buckets')
     enc_parser.add_argument('--seed', type=int,
                     help='Global random seed')
+    enc_parser.add_argument('--order_threshold_mode', type=str,
+                    help='Prediction mode for order model: clf or margin')
+    enc_parser.add_argument('--order_margin_factor', type=float,
+                    help='When threshold_mode=margin, classify as positive if score <= margin*factor')
 
     enc_parser.set_defaults(conv_type='SAGE',
                         method_type='order',
@@ -79,11 +87,15 @@ def parse_encoder(parser, arg_str=None):
                         val_size=128,
                         node_anchored=True,
                         semantic_preset='biology',
+                        val_semantic_preset='',
                         label_neg_ratio=0.5,
+                        hard_negative_ratio=0.5,
                         label_noise=0.05,
                         use_label_features=False,
                         label_feature_dim=16,
-                        seed=42)
+                        seed=42,
+                        order_threshold_mode='clf',
+                        order_margin_factor=0.5)
 
     #return enc_parser.parse_args(arg_str)
 
