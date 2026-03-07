@@ -2664,317 +2664,70 @@
                         ctx.beginPath();
                         ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI);
                         ctx.fill();
-                        ctx.stroke();
-                    }
-
-                    // Reset shadow effects and filters
-                    ctx.shadowColor = 'transparent';
-                    ctx.shadowBlur = 0;
-                    ctx.filter = 'none';
-                });
-            }
-
-            drawEdges(edges, nodes) {
-                const ctx = this.ctx;
-                const baseLineWidth = 3 / this.transform.scale;
-                const arrowSize = 12 / this.transform.scale;
-
-                // Create node lookup for position data
-                const nodeMap = {};
-                nodes.forEach(node => {
-                    nodeMap[node.id] = node;
-                });
-
-                edges.forEach(edge => {
-                    const sourceNode = nodeMap[edge.source];
-                    const targetNode = nodeMap[edge.target];
-
-                    if (!sourceNode || !targetNode) return;
-
-                    let edgeColor = this.getEdgeColor(edge);
-                    let lineWidth = baseLineWidth;
-
-                    // Apply isolation effects
-                    const isIsolated = this.isolatedNode !== null;
-                    const isConnectedToIsolated = isIsolated && this.isEdgeConnectedToIsolated(edge);
-
-                    if (isIsolated && !isConnectedToIsolated) {
-                        // Apply blur and opacity reduction to non-connected edges
-                        ctx.filter = 'blur(2px)';
-                        edgeColor = edgeColor.replace(/[\d\.]+\)$/, '0.2)'); // Reduce opacity more than nodes
-                    } else {
-                        ctx.filter = 'none';
-                    }
-
-                    // Enhance edges connected to dragged or selected nodes
-                    const isSourceDragged = this.draggedNode && this.draggedNode.id === sourceNode.id;
-                    const isTargetDragged = this.draggedNode && this.draggedNode.id === targetNode.id;
-                    const isSourceSelected = this.selectedNode && this.selectedNode.id === sourceNode.id;
-                    const isTargetSelected = this.selectedNode && this.selectedNode.id === targetNode.id;
-
-                    if (isSourceDragged || isTargetDragged) {
-                        // Edges connected to dragged nodes: thicker, more prominent
-                        lineWidth = baseLineWidth * 1.5;
-                        edgeColor = edgeColor.replace(/[\d\.]+\)$/, '0.8)'); // Increase opacity
-                    } else if (isSourceSelected || isTargetSelected) {
-                        // Edges connected to selected nodes: slightly enhanced
-                        lineWidth = baseLineWidth * 1.2;
-                        edgeColor = edgeColor.replace(/[\d\.]+\)$/, '0.7)'); // Slightly increase opacity
-                    }
-
-                    ctx.strokeStyle = edgeColor;
-                    ctx.fillStyle = edgeColor;
-                    ctx.lineWidth = lineWidth;
-
-                    // Calculate edge endpoints (accounting for node radius and current visual state)
-                    const getNodeRadius = (node) => {
-                        const base = this.nodeRadius || 50;
-                        if (this.draggedNode && this.draggedNode.id === node.id) return node.anchor ? base * 1.3 : base * 1.1;
-                        if (this.selectedNode && this.selectedNode.id === node.id) return node.anchor ? base * 1.25 : base * 1.05;
-                        if (this.hoveredNode && this.hoveredNode.id === node.id) return node.anchor ? base * 1.22 : base * 1.02;
-                        return node.anchor ? base * 1.2 : base;
-                    };
-                    const baseNodeRadius = getNodeRadius(sourceNode);
-                    function getNodeEdgeIntersection(node, x0, y0, x1, y1) {
-                        // Returns the intersection point from (x0, y0) to (x1, y1) with the node's border
-                        if (node.anchor) {
-                            // Square: calculate intersection with square border
-                            const size = 50 * 1.2; // match your square half-size
-                            const cx = node.x, cy = node.y;
-                            const dx = x1 - x0, dy = y1 - y0;
-                            let tMin = Infinity, ix = cx, iy = cy;
-                            // Four borders: left, right, top, bottom
-                            const borders = [
-                                { x: cx - size, y: null }, // left
-                                { x: cx + size, y: null }, // right
-                                { x: null, y: cy - size }, // top
-                                { x: null, y: cy + size }  // bottom
-                            ];
-                            for (const border of borders) {
-                                let t;
-                                if (border.x !== null) {
-                                    // Vertical border
-                                    if (dx !== 0) {
-                                        t = (border.x - x0) / dx;
-                                        const y = y0 + t * dy;
-                                        if (t > 0 && y >= cy - size && y <= cy + size && t < tMin) {
-                                            tMin = t;
-                                            ix = border.x;
-                                            iy = y;
-                                        }
-                                    }
-                                } else {
-                                    // Horizontal border
-                                    if (dy !== 0) {
-                                        t = (border.y - y0) / dy;
-                                        const x = x0 + t * dx;
-                                        if (t > 0 && x >= cx - size && x <= cx + size && t < tMin) {
-                                            tMin = t;
-                                            ix = x;
-                                            iy = border.y;
-                                        }
-                                    }
-                                }
-                            }
-                            return { x: ix, y: iy };
-                        } else {
-                            // Circle: use radius
-                            const dx = x1 - x0, dy = y1 - y0;
-                            const distance = Math.sqrt(dx * dx + dy * dy);
-                            const r = 50;
-                            return {
-                                x: node.x + (dx / distance) * r,
-                                y: node.y + (dy / distance) * r
-                            };
+                        
+                        if (isSelected || isHovered) {
+                            ctx.stroke();
                         }
-                    }
+                        
+                        ctx.restore();
 
-                    const start = getNodeEdgeIntersection(sourceNode, sourceNode.x, sourceNode.y, targetNode.x, targetNode.y);
-                    const end = getNodeEdgeIntersection(targetNode, targetNode.x, targetNode.y, sourceNode.x, sourceNode.y);
+                        if (showLabels.value && !isDimmed) {
+                            const lines = Object.entries(n)
+                                .filter(([k]) => !['x','y','anchor','display_label'].includes(k))
+                                .map(([k,v]) => `${k}: ${v}`);
+                            drawLabelBox(lines, n.x, n.y, 12, true);
+                        }
+                    });
+                    ctx.restore();
+                };
 
+                const drawLabelBox = (text, x, y, fontSize, isNode) => {
+                    ctx.save();
+                    ctx.globalAlpha = 1.0;
+                    ctx.font = `${fontSize}px Inter, sans-serif`;
+                    const lines = Array.isArray(text) ? text : [text];
+                    const lineHeight = fontSize + 4;
+                    const w = Math.max(...lines.map(l => ctx.measureText(l).width));
+                    const h = lines.length * lineHeight;
+                    const p = 4;
+
+                    // PURE WHITE BACKGROUND
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)';
+                    ctx.lineWidth = 1;
                     ctx.beginPath();
-                    ctx.moveTo(start.x, start.y);
-                    ctx.lineTo(end.x, end.y);
+                    ctx.roundRect(x - w/2 - p, y - h/2 - p, w + p*2, h + p*2, 4);
+                    ctx.fill();
                     ctx.stroke();
 
-                    // Draw arrow for directed edges
-                    if (edge.directed) {
-                        const dx = end.x - start.x;
-                        const dy = end.y - start.y;
-                        const length = Math.sqrt(dx * dx + dy * dy);
-                        const unitX = dx / length;
-                        const unitY = dy / length;
-                        this.drawArrow(ctx, end.x, end.y, unitX, unitY, arrowSize);
-                    }
+                    // Black Text
+                    ctx.fillStyle = '#000000';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    const startY = y - (h / 2) + (lineHeight / 2);
+                    lines.forEach((line, i) => {
+                        ctx.fillText(line, x, startY + i * lineHeight);
+                    });
+                    ctx.restore();
+                };
 
-                    // Reset filter effects
-                    ctx.filter = 'none';
-                });
-            }
+                // Helper to draw light legend onto an export canvas (for PDF)
+                const drawExportLegend = (targetCtx, position, bgColor) => {
+                    const canvas = targetCtx.canvas;
+                    const padding = 88;
+                    const lineHeight = 88;
+                    const boxWidth = 800;
+                    let x, y;
 
-            drawArrow(ctx, x, y, dirX, dirY, size) {
-                // Calculate arrow points
-                const arrowAngle = Math.PI / 6; // 30 degrees
-                const arrowX1 = x - size * (dirX * Math.cos(arrowAngle) - dirY * Math.sin(arrowAngle));
-                const arrowY1 = y - size * (dirY * Math.cos(arrowAngle) + dirX * Math.sin(arrowAngle));
-                const arrowX2 = x - size * (dirX * Math.cos(-arrowAngle) - dirY * Math.sin(-arrowAngle));
-                const arrowY2 = y - size * (dirY * Math.cos(-arrowAngle) + dirX * Math.sin(-arrowAngle));
-
-                // Draw arrow
-                ctx.beginPath();
-                ctx.moveTo(x, y);
-                ctx.lineTo(arrowX1, arrowY1);
-                ctx.moveTo(x, y);
-                ctx.lineTo(arrowX2, arrowY2);
-                ctx.stroke();
-            }
-
-            getNodeColor(node) {
-                if (node.anchor) {
-                    return 'rgba(239, 68, 68, 0.8)'; // Fixed red color for anchor nodes
-                }
-
-                // Get or generate color for this node type
-                return window.styleManager.getNodeColor(node.label);
-            }
-
-            getNodeBorderColor(node) {
-                return 'rgba(0, 0, 0, 0.3)';
-            }
-
-            getEdgeColor(edge) {
-                // Get or generate color for this edge type
-                return window.styleManager.getEdgeColor(edge.label);
-            }
-
-            drawNodeLabels(nodes) {
-                const ctx = this.ctx;
-                const fontSize = 14;
-                ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-
-                const isIsolated = this.isolatedNode !== null;
-
-                nodes.forEach(node => {
-                    if (node.label) {
-                        // Isolation logic
-                        let blur = 0;
-                        let bgOpacity = 0.7;
-                        let textOpacity = 0.95;
-                        let borderOpacity = 0.15;
-
-                        if (isIsolated) {
-                            const isIsolatedNode = this.isolatedNode && this.isolatedNode.id === node.id;
-                            const isConnectedToIsolated = isIsolated && !isIsolatedNode && this.isNodeConnectedToIsolated(node);
-
-                            if (!isIsolatedNode && !isConnectedToIsolated) {
-                                blur = 2;
-                                bgOpacity = 0.3;
-                                textOpacity = 0.2;
-                                borderOpacity = 0.05;
-                            }
-                        }
-
-                        ctx.save();
-                        ctx.filter = blur ? `blur(${blur}px)` : 'none';
-
-                        // Use node.x, node.y directly (world coordinates)
-                        const labelX = node.x;
-                        const labelY = node.y;
-
-                        let displayLabel = node.display_label || node.label;
-                        const lines = displayLabel.split('\n');
-
-                        let maxLineWidth = 0;
-                        lines.forEach(line => {
-                            const metrics = ctx.measureText(line);
-                            if (metrics.width > maxLineWidth) maxLineWidth = metrics.width;
-                        });
-                        const textHeight = fontSize;
-                        const textWidth = maxLineWidth;
-                        const padding = 6;
-                        const bgWidth = textWidth + (padding * 2);
-                        const bgHeight = lines.length * textHeight + (padding * 2);
-
-                        ctx.fillStyle = `rgba(255, 255, 255, ${bgOpacity})`;
-                        ctx.strokeStyle = `rgba(0, 0, 0, ${borderOpacity})`;
-                        ctx.lineWidth = 1;
-
-                        const cornerRadius = 4;
-                        this.drawRoundedRect(
-                            ctx,
-                            labelX - bgWidth / 2,
-                            labelY - bgHeight / 2,
-                            bgWidth,
-                            bgHeight,
-                            cornerRadius
-                        );
-
-                        ctx.fillStyle = `rgba(0, 0, 0, ${textOpacity})`;
-                        const totalTextHeight = lines.length * textHeight;
-                        const startY = labelY - totalTextHeight / 2 + textHeight / 2;
-                        lines.forEach((line, i) => {
-                            ctx.fillText(line, labelX, startY + i * textHeight);
-                        });
-
-                        ctx.restore();
-                    }
-                });
-            }
-
-            // Helper method to draw rounded rectangles
-            drawRoundedRect(ctx, x, y, width, height, radius) {
-                ctx.beginPath();
-                ctx.moveTo(x + radius, y);
-                ctx.lineTo(x + width - radius, y);
-                ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-                ctx.lineTo(x + width, y + height - radius);
-                ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-                ctx.lineTo(x + radius, y + height);
-                ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-                ctx.lineTo(x, y + radius);
-                ctx.quadraticCurveTo(x, y, x + radius, y);
-                ctx.closePath();
-                ctx.fill();
-                ctx.stroke();
-            }
-
-            drawEdgeLabels(edges, nodes) {
-                const ctx = this.ctx;
-                const fontSize = Math.max(10, 12 / this.transform.scale);
-                ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-
-                // Create node lookup for position data
-                const nodeMap = {};
-                nodes.forEach(node => {
-                    nodeMap[node.id] = node;
-                });
-
-                edges.forEach(edge => {
-                    if (!edge.label) return;
-
-                    const sourceNode = nodeMap[edge.source];
-                    const targetNode = nodeMap[edge.target];
-
-                    if (!sourceNode || !targetNode) return;
-
-                    // Apply isolation effects
-                    const isIsolated = this.isolatedNode !== null;
-                    const isConnectedToIsolated = isIsolated && this.isEdgeConnectedToIsolated(edge);
-
-                    let bgOpacity = 0.9;
-                    let textOpacity = 0.7;
-                    let borderOpacity = 0.1;
-
-                    if (isIsolated && !isConnectedToIsolated) {
-                        // Apply blur and opacity reduction to non-connected edge labels
-                        ctx.filter = 'blur(1px)';
-                        bgOpacity = 0.3;
-                        textOpacity = 0.2;
-                        borderOpacity = 0.05;
+                    if (position === 'top-right') {
+                        x = canvas.width - boxWidth - padding;
+                        y = padding;
+                    } else if (position === 'bottom-left') {
+                        x = padding;
+                        y = canvas.height - padding;
+                    } else if (position === 'bottom-right') {
+                        x = canvas.width - boxWidth - padding;
+                        y = canvas.height - padding;
                     } else {
                         ctx.filter = 'none';
                     }
