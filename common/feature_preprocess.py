@@ -30,6 +30,15 @@ FEATURE_AUGMENT, FEATURE_AUGMENT_DIMS = [], []
 #FEATURE_AUGMENT_DIMS = [73]
 #FEATURE_AUGMENT_DIMS = [15]
 
+
+def configure_feature_augment(include_label_id=False, label_feature_dim=16):
+    """Configure runtime feature augmentation from training args."""
+    global FEATURE_AUGMENT, FEATURE_AUGMENT_DIMS
+    FEATURE_AUGMENT, FEATURE_AUGMENT_DIMS = [], []
+    if include_label_id:
+        FEATURE_AUGMENT.append("label_id")
+        FEATURE_AUGMENT_DIMS.append(int(label_feature_dim))
+
 def norm(edge_index, num_nodes, edge_weight=None, improved=False,
          dtype=None):
     if edge_weight is None:
@@ -131,6 +140,21 @@ class FeatureAugment(nn.Module):
                     graph.G.nodes[v]["node_feature"] = torch.ones(feature_dim)
             return graph
 
+        def label_id_fun(graph, feature_dim):
+            raw_ids = []
+            for v in graph.G.nodes:
+                label_id = int(graph.G.nodes[v].get("label_id", 0))
+                if feature_dim <= 1:
+                    raw_ids.append(0 if label_id == 0 else 1)
+                else:
+                    # Keep UNK at bucket 0; hash all other ids into fixed buckets.
+                    raw_ids.append(0 if label_id == 0 else 1 + (label_id % (feature_dim - 1)))
+            if feature_dim <= 1:
+                graph.label_id = torch.tensor(raw_ids, dtype=torch.float).unsqueeze(1)
+            else:
+                graph.label_id = self._id_one_hot_tensor(raw_ids, one_hot_dim=feature_dim)
+            return graph
+
         self.node_features_base_fun = node_features_base_fun
 
         self.node_feature_funs = {"node_degree": degree_fun,
@@ -139,7 +163,8 @@ class FeatureAugment(nn.Module):
             "pagerank": pagerank_fun,
             'node_clustering_coefficient': clustering_coefficient_fun,
             "motif_counts": motif_counts_fun,
-            "identity": identity_fun}
+            "identity": identity_fun,
+            "label_id": label_id_fun}
 
     def register_feature_fun(name, feature_fun):
         self.node_feature_funs[name] = feature_fun
@@ -180,6 +205,14 @@ class FeatureAugment(nn.Module):
         vals = torch.min(vals, torch.tensor(one_hot_dim - 1))
         vals = torch.max(vals, torch.tensor(0))
         one_hot = torch.zeros(len(list_scalars), one_hot_dim)
+        one_hot.scatter_(1, vals, 1.0)
+        return one_hot
+
+    @staticmethod
+    def _id_one_hot_tensor(list_ids, one_hot_dim=1):
+        vals = torch.LongTensor(list_ids).view(-1, 1)
+        vals = torch.clamp(vals, 0, one_hot_dim - 1)
+        one_hot = torch.zeros(len(list_ids), one_hot_dim)
         one_hot.scatter_(1, vals, 1.0)
         return one_hot
 

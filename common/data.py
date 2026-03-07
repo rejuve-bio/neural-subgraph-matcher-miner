@@ -105,6 +105,237 @@ def sample_subgraph(g_obj, anchors=None, radius=2, hard_neg_idxs=None):
 class DataSource:
     def gen_batch(batch_target, batch_neg_target, batch_neg_query, train):
         raise NotImplementedError
+
+
+SEMANTIC_PRESETS = {
+    "biology": {
+        "node_label_weights": {
+            "high": [("TF", 0.60), ("Gene", 0.25), ("Enzyme", 0.15)],
+            "mid": [("Gene", 0.45), ("mRNA", 0.35), ("Enzyme", 0.20)],
+            "low": [("Metabolite", 0.60), ("mRNA", 0.25), ("Gene", 0.15)],
+        },
+        "edge_types": ["regulates", "transcribes", "translates", "catalyzes"],
+    },
+    "ecommerce": {
+        "node_label_weights": {
+            "high": [("product", 0.55), ("category", 0.30), ("brand", 0.15)],
+            "mid": [("customer", 0.45), ("product", 0.35), ("brand", 0.20)],
+            "low": [("review", 0.60), ("customer", 0.25), ("brand", 0.15)],
+        },
+        "edge_types": ["viewed", "purchased", "belongs_to", "made_by", "wrote"],
+    },
+    "social": {
+        "node_label_weights": {
+            "high": [("influencer", 0.60), ("community", 0.25), ("user", 0.15)],
+            "mid": [("user", 0.55), ("creator", 0.25), ("community", 0.20)],
+            "low": [("new_user", 0.60), ("bot", 0.25), ("user", 0.15)],
+        },
+        "edge_types": ["follows", "mentions", "replies_to", "belongs_to"],
+    },
+}
+
+
+class OTFSemanticSynDataSource(DataSource):
+    """On-the-fly synthetic datasource with semantic labels and label negatives."""
+    def __init__(self, max_size=29, min_size=5, node_anchored=False,
+                 semantic_preset="biology", label_neg_ratio=0.5,
+                 label_noise=0.05, seed=42):
+        self.max_size = max_size
+        self.min_size = min_size
+        self.node_anchored = node_anchored
+        self.semantic_preset = semantic_preset if semantic_preset in SEMANTIC_PRESETS else "biology"
+        self.label_neg_ratio = float(max(0.0, min(1.0, label_neg_ratio)))
+        self.label_noise = float(max(0.0, min(0.5, label_noise)))
+        self.generator = combined_syn.get_generator(np.arange(
+            self.min_size + 1, self.max_size + 1))
+        self.rng = random.Random(seed)
+
+    def gen_data_loaders(self, size, batch_size, train=True,
+                         use_distributed_sampling=False):
+        n_batches = max(1, size // batch_size)
+        return [[batch_size] * n_batches for _ in range(3)]
+
+    def _sample_by_weights(self, weighted_values):
+        values, weights = zip(*weighted_values)
+        return self.rng.choices(values, weights=weights, k=1)[0]
+
+    def _label_bucket(self, degree, q1, q2):
+        if degree >= q2:
+            return "high"
+        if degree <= q1:
+            return "low"
+        return "mid"
+
+    def _stable_pair_hash(self, src_label, dst_label):
+        key = "{}->{}".format(src_label, dst_label)
+        return sum((i + 1) * ord(c) for i, c in enumerate(key))
+
+    def _annotate_graph(self, graph):
+        g = graph.copy()
+        preset = SEMANTIC_PRESETS[self.semantic_preset]
+        edge_types = preset["edge_types"]
+
+        if len(g.nodes()) == 0:
+            return g
+        degrees = np.array([d for _, d in g.degree()], dtype=float)
+        q1 = float(np.percentile(degrees, 35))
+        q2 = float(np.percentile(degrees, 75))
+
+        for n in g.nodes():
+            bucket = self._label_bucket(g.degree[n], q1, q2)
+            label = self._sample_by_weights(preset["node_label_weights"][bucket])
+            if self.rng.random() < self.label_noise:
+                label = None  # explicit unknown label path
+            g.nodes[n]["label"] = label
+
+        for u, v in g.edges():
+            src_label = g.nodes[u].get("label")
+            dst_label = g.nodes[v].get("label")
+            if src_label is None or dst_label is None:
+                edge_type = "unknown"
+                edge_type_id = 0
+            else:
+                idx = self._stable_pair_hash(src_label, dst_label) % len(edge_types)
+                edge_type = edge_types[idx]
+                if self.rng.random() < self.label_noise:
+                    edge_type = self.rng.choice(edge_types)
+                edge_type_id = idx + 1
+            g.edges[u, v]["edge_type"] = edge_type
+            # Keep numeric edge type for DeepSNAP compatibility.
+            g.edges[u, v]["type"] = float(edge_type_id)
+            g.edges[u, v]["type_id"] = int(edge_type_id)
+        return g
+
+    def _sample_connected_subgraph(self, graph, size, max_tries=12):
+        nodes_all = list(graph.nodes())
+        if len(nodes_all) <= size:
+            return graph.copy()
+        for _ in range(max_tries):
+            start = self.rng.choice(nodes_all)
+            visited = {start}
+            frontier = [start]
+            while frontier and len(visited) < size:
+                curr = frontier.pop(0)
+                neighs = [x for x in graph.neighbors(curr) if x not in visited]
+                self.rng.shuffle(neighs)
+                for nxt in neighs:
+                    if len(visited) >= size:
+                        break
+                    visited.add(nxt)
+                    frontier.append(nxt)
+            sub = graph.subgraph(list(visited)).copy()
+            if sub.number_of_edges() > 0:
+                return sub
+        # fallback
+        sample_nodes = self.rng.sample(nodes_all, min(size, len(nodes_all)))
+        return graph.subgraph(sample_nodes).copy()
+
+    def _set_anchor(self, graph, anchor):
+        for n in graph.nodes():
+            graph.nodes[n]["node_feature"] = torch.tensor(
+                [1.0 if n == anchor else 0.0], dtype=torch.float)
+        return graph
+
+    def _sample_positive_pair(self):
+        for _ in range(30):
+            size = self.rng.randint(self.min_size + 1, self.max_size)
+            graph = self._annotate_graph(self.generator.generate(size=size))
+            size_a = self.rng.randint(self.min_size + 1, min(self.max_size, len(graph)))
+            sub_a = self._sample_connected_subgraph(graph, size_a)
+            if len(sub_a) <= self.min_size:
+                continue
+            size_b = self.rng.randint(self.min_size, len(sub_a) - 1)
+            sub_b = self._sample_connected_subgraph(sub_a, size_b)
+            if sub_a.number_of_edges() == 0 or sub_b.number_of_edges() == 0:
+                continue
+            if self.node_anchored:
+                anchor_a = self.rng.choice(list(sub_a.nodes()))
+                anchor_b = anchor_a if anchor_a in sub_b.nodes() else self.rng.choice(list(sub_b.nodes()))
+                self._set_anchor(sub_a, anchor_a)
+                self._set_anchor(sub_b, anchor_b)
+            return sub_a, sub_b
+        raise RuntimeError("Failed to generate semantic positive pair")
+
+    def _sample_structural_negative(self):
+        for _ in range(30):
+            size_a = self.rng.randint(self.min_size + 1, self.max_size)
+            size_b = self.rng.randint(self.min_size, self.max_size - 1)
+            g1 = self._annotate_graph(self.generator.generate(size=size_a))
+            g2 = self._annotate_graph(self.generator.generate(size=size_b + 1))
+            sub_a = self._sample_connected_subgraph(g1, min(size_a, len(g1)))
+            sub_b = self._sample_connected_subgraph(g2, min(size_b, len(g2)))
+            if sub_a.number_of_edges() == 0 or sub_b.number_of_edges() == 0:
+                continue
+            # Cheap structural mismatch check before expensive isomorphism.
+            if (sub_a.number_of_nodes() != sub_b.number_of_nodes() or
+                    sub_a.number_of_edges() != sub_b.number_of_edges()):
+                if self.node_anchored:
+                    self._set_anchor(sub_a, self.rng.choice(list(sub_a.nodes())))
+                    self._set_anchor(sub_b, self.rng.choice(list(sub_b.nodes())))
+                return sub_a, sub_b
+            if not nx.is_isomorphic(sub_a, sub_b):
+                if self.node_anchored:
+                    self._set_anchor(sub_a, self.rng.choice(list(sub_a.nodes())))
+                    self._set_anchor(sub_b, self.rng.choice(list(sub_b.nodes())))
+                return sub_a, sub_b
+        raise RuntimeError("Failed to generate semantic structural negative")
+
+    def _corrupt_query_labels(self, query_graph):
+        corrupted = query_graph.copy()
+        nodes = list(corrupted.nodes())
+        if len(nodes) > 1:
+            node_labels = [corrupted.nodes[n].get("label") for n in nodes]
+            original = list(node_labels)
+            self.rng.shuffle(node_labels)
+            if node_labels == original:
+                node_labels = node_labels[1:] + node_labels[:1]
+            for n, lbl in zip(nodes, node_labels):
+                corrupted.nodes[n]["label"] = lbl
+        edges = list(corrupted.edges())
+        if len(edges) > 1:
+            edge_types = [corrupted.edges[e].get("type", 0.0) for e in edges]
+            original_edge_types = list(edge_types)
+            self.rng.shuffle(edge_types)
+            if edge_types == original_edge_types:
+                edge_types = edge_types[1:] + edge_types[:1]
+            for e, t in zip(edges, edge_types):
+                corrupted.edges[e]["type"] = float(t)
+                corrupted.edges[e]["type_id"] = int(t)
+        return corrupted
+
+    def gen_batch(self, a, b, c, train):
+        batch_size = int(a)
+        n_pos = batch_size // 2
+        n_neg = batch_size // 2
+        n_label_neg = int(round(n_neg * self.label_neg_ratio))
+        n_struct_neg = n_neg - n_label_neg
+
+        pos_a, pos_b = [], []
+        for _ in range(n_pos):
+            g_a, g_b = self._sample_positive_pair()
+            pos_a.append(g_a)
+            pos_b.append(g_b)
+
+        neg_a, neg_b = [], []
+        for _ in range(n_struct_neg):
+            g_a, g_b = self._sample_structural_negative()
+            neg_a.append(g_a)
+            neg_b.append(g_b)
+
+        for _ in range(n_label_neg):
+            idx = self.rng.randrange(len(pos_a))
+            g_a = pos_a[idx].copy()
+            g_b = self._corrupt_query_labels(pos_b[idx])
+            neg_a.append(g_a)
+            neg_b.append(g_b)
+
+        pos_a = utils.batch_nx_graphs(pos_a)
+        pos_b = utils.batch_nx_graphs(pos_b)
+        neg_a = utils.batch_nx_graphs(neg_a)
+        neg_b = utils.batch_nx_graphs(neg_b)
+        return pos_a, pos_b, neg_a, neg_b
+
+
 class CustomGraphDataset:
     def __init__(self, graph_pkl_path, node_anchored=False, num_queries=32, subgraph_hops=1, min_size=5, max_size=29):
         self.graph_pkl_path = graph_pkl_path

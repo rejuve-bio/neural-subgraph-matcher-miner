@@ -30,6 +30,7 @@ import torch_geometric.utils as pyg_utils
 import torch_geometric.nn as pyg_nn
 
 from common import data
+from common import feature_preprocess
 from common import models
 from common import utils
 if HYPERPARAM_SEARCH:
@@ -57,6 +58,13 @@ def make_data_source(args):
         if len(toks) == 1 or toks[1] == "balanced":
             data_source = data.OTFSynDataSource(
                 node_anchored=args.node_anchored)
+        elif toks[1] == "semantic":
+            data_source = data.OTFSemanticSynDataSource(
+                node_anchored=args.node_anchored,
+                semantic_preset=args.semantic_preset,
+                label_neg_ratio=args.label_neg_ratio,
+                label_noise=args.label_noise,
+                seed=args.seed)
         elif toks[1] == "imbalanced":
             data_source = data.OTFSynImbalancedDataSource(
                 node_anchored=args.node_anchored)
@@ -218,6 +226,17 @@ def main(force_test=False):
     utils.parse_optimizer(parser)
     parse_encoder(parser)
     args = parser.parse_args()
+
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
+
+    use_label_features = args.use_label_features or args.dataset.startswith("syn-semantic")
+    feature_preprocess.configure_feature_augment(
+        include_label_id=use_label_features,
+        label_feature_dim=args.label_feature_dim)
 
     if force_test:
         args.test = True
