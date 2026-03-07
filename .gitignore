@@ -14,4 +14,4 @@ orca/
 core
 deepsnap-experimental/
 *.md
-/scripts
+\scripts

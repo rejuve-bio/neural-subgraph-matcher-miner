@@ -27,6 +27,7 @@ import torch_geometric.nn as pyg_nn
 from matplotlib import cm
 
 from common import data
+from common import feature_preprocess
 from common import models
 from common import utils
 from common import label_vocab
@@ -400,7 +401,12 @@ def pattern_growth_streaming(dataset, task, args):
             pat_anchor = 0 if args.node_anchored else None
             std_pat = utils.standardize_graph(pattern, anchor=pat_anchor)
             ds_pat = DSGraph(std_pat)
-            batch_pat = Batch.from_data_list([ds_pat]).to(utils.get_device())
+            batch_pat = Batch.from_data_list([ds_pat])
+            augmenter = feature_preprocess.FeatureAugment()
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore', message='Unknown type of key*')
+                batch_pat = augmenter.augment(batch_pat)
+            batch_pat = batch_pat.to(utils.get_device())
             
             with torch.no_grad():
                 pat_emb = model.emb_model(batch_pat) # (1, D)
@@ -1408,11 +1414,17 @@ def main():
     try:
         ensure_directories()
 
-        parser = argparse.ArgumentParser(description='Decoder arguments')
+        parser = argparse.ArgumentParser(description='Decoder arguments', conflict_handler='resolve')
         parse_encoder(parser)
         parse_decoder(parser)
         
         args = parser.parse_args()
+        use_label_features = getattr(args, "use_label_features", False)
+        label_feature_dim = getattr(args, "label_feature_dim", 16)
+        feature_preprocess.configure_feature_augment(
+            include_label_id=use_label_features,
+            label_feature_dim=label_feature_dim,
+        )
         random.seed(args.seed)
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)
