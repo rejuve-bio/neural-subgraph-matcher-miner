@@ -261,7 +261,7 @@ To use the LLM-powered interpreter:
    - **.env File**: Create a `.env` file in the project root with `GEMINI_API_KEY=your_key`
    - **UI Input**: Enter the key directly in the web interface through the provided field.
 
-2. **Start Backend**:
+2. **Start Backend after it finished mining**:
    ```bash
     docker run --rm -p 9002:9002 -v "$(pwd)":/app --env-file .env -w /app decoder-image:latest python3 -m app.main
    ```
