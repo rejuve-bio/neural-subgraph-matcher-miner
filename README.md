@@ -263,7 +263,7 @@ To use the LLM-powered interpreter:
 
 2. **Start Backend**:
    ```bash
-   python3 -m app.main
+    docker run --rm -p 9002:9002 -v "$(pwd)":/app --env-file .env -w /app decoder-image:latest python3 -m app.main
    ```
 
 3. **Open Visualizer**:

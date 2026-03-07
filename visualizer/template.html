@@ -2612,13 +2612,11 @@
                     const isIsolatedNode = this.isolatedNode && this.isolatedNode.id === node.id;
                     const isConnectedToIsolated = isIsolated && !isIsolatedNode && this.isNodeConnectedToIsolated(node);
 
+                    ctx.save();
                     if (isIsolated && !isIsolatedNode && !isConnectedToIsolated) {
-                        // Apply blur and opacity reduction to non-connected nodes
-                        ctx.filter = 'blur(2px)';
-                        nodeColor = nodeColor.replace(/[\d\.]+\)$/, '0.3)'); // Reduce opacity
-                        borderColor = borderColor.replace(/[\d\.]+\)$/, '0.3)');
+                        ctx.globalAlpha = 0.2;
                     } else {
-                        ctx.filter = 'none';
+                        ctx.globalAlpha = 1.0;
                     }
 
                     // Apply visual feedback for interaction states
@@ -2656,121 +2654,355 @@
                     ctx.strokeStyle = borderColor;
 
                     if (node.anchor) {
-                        // Draw anchor nodes as red squares
-                        ctx.fillRect(node.x - size, node.y - size, size * 2, size * 2);
-                        ctx.strokeRect(node.x - size, node.y - size, size * 2, size * 2);
-                    } else {
-                        // Draw regular nodes as circles
+                        const r = 58;
                         ctx.beginPath();
-                        ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI);
+                        ctx.rect(node.x - r, node.y - r, r * 2, r * 2);
                         ctx.fill();
-                        
-                        if (isSelected || isHovered) {
-                            ctx.stroke();
-                        }
-                        
-                        ctx.restore();
-
-                        if (showLabels.value && !isDimmed) {
-                            const lines = Object.entries(n)
-                                .filter(([k]) => !['x','y','anchor','display_label'].includes(k))
-                                .map(([k,v]) => `${k}: ${v}`);
-                            drawLabelBox(lines, n.x, n.y, 12, true);
-                        }
-                    });
-                    ctx.restore();
-                };
-
-                const drawLabelBox = (text, x, y, fontSize, isNode) => {
-                    ctx.save();
-                    ctx.globalAlpha = 1.0;
-                    ctx.font = `${fontSize}px Inter, sans-serif`;
-                    const lines = Array.isArray(text) ? text : [text];
-                    const lineHeight = fontSize + 4;
-                    const w = Math.max(...lines.map(l => ctx.measureText(l).width));
-                    const h = lines.length * lineHeight;
-                    const p = 4;
-
-                    // PURE WHITE BACKGROUND
-                    ctx.fillStyle = '#FFFFFF';
-                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)';
-                    ctx.lineWidth = 1;
-                    ctx.beginPath();
-                    ctx.roundRect(x - w/2 - p, y - h/2 - p, w + p*2, h + p*2, 4);
-                    ctx.fill();
-                    ctx.stroke();
-
-                    // Black Text
-                    ctx.fillStyle = '#000000';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    const startY = y - (h / 2) + (lineHeight / 2);
-                    lines.forEach((line, i) => {
-                        ctx.fillText(line, x, startY + i * lineHeight);
-                    });
-                    ctx.restore();
-                };
-
-                // Helper to draw light legend onto an export canvas (for PDF)
-                const drawExportLegend = (targetCtx, position, bgColor) => {
-                    const canvas = targetCtx.canvas;
-                    const padding = 88;
-                    const lineHeight = 88;
-                    const boxWidth = 800;
-                    let x, y;
-
-                    if (position === 'top-right') {
-                        x = canvas.width - boxWidth - padding;
-                        y = padding;
-                    } else if (position === 'bottom-left') {
-                        x = padding;
-                        y = canvas.height - padding;
-                    } else if (position === 'bottom-right') {
-                        x = canvas.width - boxWidth - padding;
-                        y = canvas.height - padding;
+                        if (isSelected || isHovered) ctx.stroke();
                     } else {
-                        ctx.filter = 'none';
+                        const r = 50;
+                        ctx.beginPath();
+                        ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
+                        ctx.fill();
+                        if (isSelected || isHovered) ctx.stroke();
                     }
 
-                    // Calculate midpoint of edge
-                    const midX = (sourceNode.x + targetNode.x) / 2;
-                    const midY = (sourceNode.y + targetNode.y) / 2;
-
-                    // Measure text dimensions
-                    const textMetrics = ctx.measureText(edge.label);
-                    const textWidth = textMetrics.width;
-                    const textHeight = fontSize;
-
-                    // Calculate label background dimensions with padding
-                    const padding = 2 / this.transform.scale;
-                    const bgWidth = textWidth + (padding * 2);
-                    const bgHeight = textHeight + (padding * 2);
-
-                    // Draw transparent rectangular background
-                    ctx.fillStyle = `rgba(255, 255, 255, ${bgOpacity})`;
-                    ctx.strokeStyle = `rgba(0, 0, 0, ${borderOpacity})`;
-                    ctx.lineWidth = 0.5 / this.transform.scale;
-
-                    ctx.fillRect(
-                        midX - bgWidth / 2,
-                        midY - bgHeight / 2,
-                        bgWidth,
-                        bgHeight
-                    );
-                    ctx.strokeRect(
-                        midX - bgWidth / 2,
-                        midY - bgHeight / 2,
-                        bgWidth,
-                        bgHeight
-                    );
-
-                    // Draw text
-                    ctx.fillStyle = `rgba(0, 0, 0, ${textOpacity})`;
-                    ctx.fillText(edge.label, midX, midY);
-
-                    // Reset filter effects
-                    ctx.filter = 'none';
                 });
+            }
+
+            getNodeColor(node) {
+                if (node.anchor) return 'rgba(239, 68, 68, 0.9)';
+                if (window.styleManager) {
+                    return window.styleManager.getNodeColor(node.label);
+                }
+                return 'rgba(59, 130, 246, 0.7)';
+            }
+
+            getNodeBorderColor(node) {
+                const isHovered = this.hoveredNode && this.hoveredNode.id === node.id;
+                const isSelected = this.selectedNode && this.selectedNode.id === node.id;
+                if (isSelected || isHovered) return 'rgba(59, 130, 246, 0.8)';
+                return 'rgba(0, 0, 0, 0.1)';
+            }
+
+            drawEdges(edges, nodes) {
+                const ctx = this.ctx;
+                const iso = this.isolatedNode;
+
+                edges.forEach(e => {
+                    const s = nodes.find(n => n.id === e.source);
+                    const t = nodes.find(n => n.id === e.target);
+                    if (!s || !t) return;
+
+                    let isDimmed = false;
+                    if (iso) {
+                        const connected = (s.id === iso.id || t.id === iso.id);
+                        if (!connected) isDimmed = true;
+                    }
+
+                    ctx.save();
+                    ctx.globalAlpha = isDimmed ? 0.1 : 0.8;
+                    const styleColor = window.styleManager ? window.styleManager.getEdgeColor(e.label) : '#3b82f6';
+                    ctx.strokeStyle = isDimmed ? '#555' : styleColor;
+                    ctx.lineWidth = 2.5;
+
+                    const sr = s.anchor ? 58 : 50;
+                    const tr = t.anchor ? 58 : 50;
+
+                    const dx = t.x - s.x;
+                    const dy = t.y - s.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist > 0) {
+                        const ux = dx / dist;
+                        const uy = dy / dist;
+
+                        const sx = s.x + ux * sr;
+                        const sy = s.y + uy * sr;
+                        const tx = t.x - ux * tr;
+                        const ty = t.y - uy * tr;
+
+                        ctx.beginPath();
+                        ctx.moveTo(sx, sy);
+                        ctx.lineTo(tx, ty);
+                        ctx.stroke();
+
+                        if (e.directed) {
+                            const angle = Math.atan2(dy, dx);
+                            ctx.fillStyle = ctx.strokeStyle;
+                            ctx.beginPath();
+                            ctx.moveTo(tx, ty);
+                            ctx.lineTo(tx - 10 * Math.cos(angle - 0.4), ty - 10 * Math.sin(angle - 0.4));
+                            ctx.lineTo(tx - 10 * Math.cos(angle + 0.4), ty - 10 * Math.sin(angle + 0.4));
+                            ctx.closePath();
+                            ctx.fill();
+                        }
+                    }
+                    ctx.restore();
+                });
+            }
+
+            drawNodeLabels(nodes) {
+                if (!window.labelsEnabled) return;
+                const iso = this.isolatedNode;
+
+                nodes.forEach(node => {
+                    let isDimmed = false;
+                    if (iso) {
+                        const isNeighbor = this.isNodeConnectedToIsolated(node);
+                        if (node.id !== iso.id && !isNeighbor) isDimmed = true;
+                    }
+
+                    if (!isDimmed) {
+                        const lines = Object.entries(node)
+                            .filter(([k]) => !['x', 'y', 'anchor', 'display_label'].includes(k))
+                            .map(([k, v]) => `${k}: ${v}`);
+                        this.drawLabelBox(lines, node.x, node.y, 12, true);
+                    }
+                });
+            }
+
+            drawEdgeLabels(edges, nodes) {
+                if (!window.labelsEnabled) return;
+                const iso = this.isolatedNode;
+
+                edges.forEach(e => {
+                    const s = nodes.find(n => n.id === e.source);
+                    const t = nodes.find(n => n.id === e.target);
+                    if (!s || !t) return;
+
+                    let isDimmed = false;
+                    if (iso) {
+                        const connected = (s.id === iso.id || t.id === iso.id);
+                        if (!connected) isDimmed = true;
+                    }
+
+                    if (!isDimmed && e.label && e.label !== 'default') {
+                        this.drawLabelBox(e.label, (s.x + t.x) / 2, (s.y + t.y) / 2, 10, false);
+                    }
+                });
+            }
+
+            drawLabelBox(text, x, y, fontSize, isNode) {
+                const ctx = this.ctx;
+                ctx.save();
+                ctx.globalAlpha = 1.0;
+                ctx.font = `${fontSize}px Inter, sans-serif`;
+                const lines = Array.isArray(text) ? text : [text];
+                const lineHeight = fontSize + 4;
+                const w = Math.max(...lines.map(l => ctx.measureText(l).width));
+                const h = lines.length * lineHeight;
+                const p = 4;
+
+                // PURE WHITE BACKGROUND
+                ctx.fillStyle = '#FFFFFF';
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.roundRect(x - w / 2 - p, y - h / 2 - p, w + p * 2, h + p * 2, 4);
+                ctx.fill();
+                ctx.stroke();
+
+                // Black Text
+                ctx.fillStyle = '#000000';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                const startY = y - (h / 2) + (lineHeight / 2);
+                lines.forEach((line, i) => {
+                    ctx.fillText(line, x, startY + i * lineHeight);
+                });
+                ctx.restore();
+            }
+
+            drawExportLegend(targetCtx, position, bgColor) {
+                const canvas = targetCtx.canvas;
+                const padding = 88;
+                const lineHeight = 88;
+                const boxWidth = 800;
+                let x, y;
+
+                if (position === 'top-right') {
+                    x = canvas.width - boxWidth - padding;
+                    y = padding;
+                } else if (position === 'bottom-left') {
+                    x = padding;
+                    y = canvas.height - padding;
+                } else if (position === 'bottom-right') {
+                    x = canvas.width - boxWidth - padding;
+                    y = canvas.height - padding;
+                } else {
+                    x = canvas.width - boxWidth - padding;
+                    y = padding;
+                }
+
+                targetCtx.save();
+                targetCtx.font = '56px Inter, sans-serif';
+
+                let lines_count = 0;
+                const nodeTypes = (GRAPH_DATA.legend && GRAPH_DATA.legend.nodeTypes) || [];
+                const edgeTypes = (GRAPH_DATA.legend && GRAPH_DATA.legend.edgeTypes) || [];
+
+                lines_count += 1;
+                if (nodeTypes.length) {
+                    lines_count += 1;
+                    lines_count += nodeTypes.length;
+                }
+                if (edgeTypes.length) {
+                    lines_count += 1;
+                    lines_count += edgeTypes.length;
+                }
+                lines_count += 2;
+
+                const boxHeight = padding + lines_count * lineHeight;
+                if (position === 'bottom-left' || position === 'bottom-right') {
+                    y = y - boxHeight;
+                }
+
+                targetCtx.fillStyle = bgColor;
+                targetCtx.strokeStyle = '#000000';
+                targetCtx.lineWidth = 4;
+                targetCtx.beginPath();
+                targetCtx.roundRect(x, y, boxWidth, boxHeight, 8);
+                targetCtx.fill();
+                targetCtx.stroke();
+
+                let cursorY = y + padding;
+                const textX = x + 12;
+
+                targetCtx.fillStyle = '#111827';
+                targetCtx.fillText('Legend', textX, cursorY);
+                cursorY += lineHeight;
+
+                if (nodeTypes.length) {
+                    targetCtx.fillStyle = '#6b7280';
+                    targetCtx.fillText('NODE TYPES', textX, cursorY);
+                    cursorY += lineHeight;
+                    nodeTypes.forEach(t => {
+                        targetCtx.fillStyle = t.color || '#3b82f6';
+                        targetCtx.strokeStyle = 'rgba(0,0,0,0.12)';
+                        targetCtx.beginPath();
+                        targetCtx.roundRect(x + 12, cursorY - 22, 32, 32, 6);
+                        targetCtx.fill();
+                        targetCtx.stroke();
+                        targetCtx.fillStyle = '#111827';
+                        targetCtx.fillText(t.label, textX + 64, cursorY);
+                        cursorY += lineHeight;
+                    });
+                }
+
+                if (edgeTypes.length) {
+                    targetCtx.fillStyle = '#6b7280';
+                    targetCtx.fillText('EDGE TYPES', textX, cursorY);
+                    cursorY += lineHeight;
+                    edgeTypes.forEach(t => {
+                        targetCtx.fillStyle = t.color || '#3b82f6';
+                        targetCtx.fillRect(x + 12, cursorY - 10, 64, 8);
+                        targetCtx.fillStyle = '#111827';
+                        targetCtx.fillText(t.label, textX + 84, cursorY);
+                        cursorY += lineHeight;
+                    });
+                }
+
+                targetCtx.fillStyle = '#6b7280';
+                targetCtx.fillText('SPECIAL NODES', textX, cursorY);
+                cursorY += lineHeight;
+
+                targetCtx.fillStyle = 'rgba(248, 113, 113, 0.9)';
+                targetCtx.strokeStyle = 'rgba(0,0,0,0.12)';
+                targetCtx.beginPath();
+                targetCtx.roundRect(x + 12, cursorY - 22, 32, 32, 6);
+                targetCtx.fill();
+                targetCtx.stroke();
+                targetCtx.fillStyle = '#111827';
+                targetCtx.fillText('Anchor Nodes', textX + 64, cursorY);
+
+                targetCtx.restore();
+            }
+
+            drawExportLegendDark(targetCtx) {
+                const canvas = targetCtx.canvas;
+                const padding = 88;
+                const lineHeight = 88;
+                const boxWidth = 800;
+                let x = canvas.width - boxWidth - padding;
+                let y = canvas.height - padding;
+
+                targetCtx.save();
+                targetCtx.font = '56px Inter, sans-serif';
+
+                let lines_count = 0;
+                const nodeTypes = (GRAPH_DATA.legend && GRAPH_DATA.legend.nodeTypes) || [];
+                const edgeTypes = (GRAPH_DATA.legend && GRAPH_DATA.legend.edgeTypes) || [];
+
+                lines_count += 1;
+                if (nodeTypes.length) {
+                    lines_count += 1;
+                    lines_count += nodeTypes.length;
+                }
+                if (edgeTypes.length) {
+                    lines_count += 1;
+                    lines_count += edgeTypes.length;
+                }
+                lines_count += 2;
+
+                const boxHeight = padding + lines_count * lineHeight;
+                y = y - boxHeight;
+
+                targetCtx.fillStyle = '#111827';
+                targetCtx.strokeStyle = '#4b5563';
+                targetCtx.lineWidth = 1.5;
+                targetCtx.beginPath();
+                targetCtx.roundRect(x, y, boxWidth, boxHeight, 14);
+                targetCtx.fill();
+                targetCtx.stroke();
+
+                let cursorY = y + padding;
+                const textX = x + 12;
+
+                targetCtx.fillStyle = '#e5e7eb';
+                targetCtx.fillText('Legend', textX, cursorY);
+                cursorY += lineHeight;
+
+                if (nodeTypes.length) {
+                    targetCtx.fillStyle = '#9ca3af';
+                    targetCtx.fillText('Node Types', textX, cursorY);
+                    cursorY += lineHeight;
+                    nodeTypes.forEach(t => {
+                        targetCtx.fillStyle = t.color || '#3b82f6';
+                        targetCtx.beginPath();
+                        targetCtx.roundRect(x + 16, cursorY - 22, 32, 32, 6);
+                        targetCtx.fill();
+                        targetCtx.fillStyle = '#e5e7eb';
+                        targetCtx.fillText(t.label, textX + 64, cursorY);
+                        cursorY += lineHeight;
+                    });
+                }
+
+                if (edgeTypes.length) {
+                    targetCtx.fillStyle = '#9ca3af';
+                    targetCtx.fillText('Edge Types', textX, cursorY);
+                    cursorY += lineHeight;
+                    edgeTypes.forEach(t => {
+                        targetCtx.fillStyle = t.color || '#3b82f6';
+                        targetCtx.fillRect(x + 16, cursorY - 10, 64, 8);
+                        targetCtx.fillStyle = '#e5e7eb';
+                        targetCtx.fillText(t.label, textX + 84, cursorY);
+                        cursorY += lineHeight;
+                    });
+                }
+
+                targetCtx.fillStyle = '#9ca3af';
+                targetCtx.fillText('Special Nodes', textX, cursorY);
+                cursorY += lineHeight;
+
+                targetCtx.fillStyle = 'rgba(248, 113, 113, 0.9)';
+                targetCtx.beginPath();
+                targetCtx.roundRect(x + 16, cursorY - 22, 32, 32, 6);
+                targetCtx.fill();
+                targetCtx.fillStyle = '#e5e7eb';
+                targetCtx.fillText('Anchor Nodes', textX + 64, cursorY);
+
+                targetCtx.restore();
             }
 
             drawGrid() {
@@ -2912,62 +3144,14 @@
                 } else {
                     // Use test nodes if no graph data available
                     nodes = [
-                        {
-                            id: 'origin',
-                            x: 0, y: 0,
-                            type: 'anchor',
-                            label: 'Origin',
-                            anchor: true
-                        },
-                        {
-                            id: 'processor',
-                            x: 120, y: 60,
-                            type: 'computation',
-                            label: 'Processor',
-                            anchor: false
-                        },
-                        {
-                            id: 'database',
-                            x: -90, y: 140,
-                            type: 'storage',
-                            label: 'Database',
-                            anchor: false
-                        },
-                        {
-                            id: 'api',
-                            x: 180, y: -120,
-                            type: 'service',
-                            label: 'API Gateway',
-                            anchor: false
-                        },
-                        {
-                            id: 'cache',
-                            x: -140, y: -90,
-                            type: 'storage',
-                            label: 'Cache',
-                            anchor: false
-                        },
-                        {
-                            id: 'monitor',
-                            x: 60, y: -180,
-                            type: 'analytics',
-                            label: 'Monitor',
-                            anchor: false
-                        },
-                        {
-                            id: 'queue',
-                            x: -60, y: 180,
-                            type: 'messaging',
-                            label: 'Message Queue',
-                            anchor: false
-                        },
-                        {
-                            id: 'auth',
-                            x: 200, y: 80,
-                            type: 'security',
-                            label: 'Auth Service',
-                            anchor: false
-                        }
+                        { id: 'origin', x: 0, y: 0, type: 'anchor', label: 'Origin', anchor: true },
+                        { id: 'processor', x: 120, y: 60, type: 'computation', label: 'Processor', anchor: false },
+                        { id: 'database', x: -90, y: 140, type: 'storage', label: 'Database', anchor: false },
+                        { id: 'api', x: 180, y: -120, type: 'service', label: 'API Gateway', anchor: false },
+                        { id: 'cache', x: -140, y: -90, type: 'storage', label: 'Cache', anchor: false },
+                        { id: 'monitor', x: 60, y: -180, type: 'analytics', label: 'Monitor', anchor: false },
+                        { id: 'queue', x: -60, y: 180, type: 'messaging', label: 'Message Queue', anchor: false },
+                        { id: 'auth', x: 200, y: 80, type: 'security', label: 'Auth Service', anchor: false }
                     ];
                 }
 
