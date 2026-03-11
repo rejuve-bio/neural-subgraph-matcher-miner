@@ -10,22 +10,23 @@ import pickle
 import networkx as nx
 
 # Configuration
-DATASET = "ca-GrQc"
+DATASET = "enzymes"
+# DATASET = "cox2" # Alternative
 STRATEGIES = ["beam", "greedy", "mcts"]
-TRIALS_GRID = [3, 5, 10]
-NEIGHBORHOODS_GRID = [10, 20, 40]
+TRIALS_GRID = [3, 5, 10, 20]
+NEIGHBORHOODS_GRID = [10, 20, 40, 60]
 MIN_SIZE = 3
 MAX_SIZE = 5
 OUT_BATCH_SIZE = 3
 BEAM_WIDTH = 2
-RUN_TIMEOUT_SEC = 600
+RUN_TIMEOUT_SEC = 400
 SKIP_ALREADY_DONE = True
 SKIP_TIMEOUT_RUNS = False
 PRUNE_HARDER_AFTER_TIMEOUT = True
-EXPERIMENT_RESULTS_CSV = "results/cagrqc_assignment_experiment_results.csv"
-BEST_SUMMARY_TXT = "results/cagrqc_assignment_best_summary.txt"
-STRATEGY_VS_RUNTIME_PLOT = "plots/cagrqc_assignment_strategy_vs_runtime.png"
-CONFIG_VS_PATTERNS_PLOT = "plots/cagrqc_assignment_config_vs_patterns.png"
+EXPERIMENT_RESULTS_CSV = "results/two_assignment_experiment_results.csv"
+BEST_SUMMARY_TXT = "results/assignment_best_summary.txt"
+STRATEGY_VS_RUNTIME_PLOT = "plots/f_assignment_strategy_vs_runtime.png"
+CONFIG_VS_PATTERNS_PLOT = "plots/f_assignment_config_vs_patterns.png"
 
 def count_patterns_from_obj(obj):
     """Count mined patterns for common decoder output formats."""
