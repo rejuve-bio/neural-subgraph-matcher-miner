@@ -101,6 +101,13 @@ def read_existing_results(path):
         return pd.DataFrame()
 
 
+def append_result_row(path, result):
+    """Append one run result immediately for crash/interrupt safety."""
+    row_df = pd.DataFrame([result])
+    write_header = not os.path.exists(path)
+    row_df.to_csv(path, mode="a", header=write_header, index=False)
+
+
 def has_existing_run(df, strategy, dataset, n_trials, n_neighborhoods):
     if df.empty:
         return False
@@ -356,7 +363,6 @@ def main():
 
     existing_grid = read_existing_results(EXPERIMENT_RESULTS_CSV)
 
-    grid_results = []
     for strategy in STRATEGIES:
         for n_trials in TRIALS_GRID:
             for n_neighborhoods in NEIGHBORHOODS_GRID:
@@ -370,18 +376,20 @@ def main():
                         f"Skipping by timeout pruning: {strategy} on {DATASET} with trials={n_trials} neighborhoods={n_neighborhoods}"
                     )
                     continue
-                grid_results.append(
-                    run_experiment(
-                        strategy,
-                        DATASET,
-                        n_trials,
-                        n_neighborhoods,
-                        MIN_SIZE,
-                        MAX_SIZE,
-                    )
+                result = run_experiment(
+                    strategy,
+                    DATASET,
+                    n_trials,
+                    n_neighborhoods,
+                    MIN_SIZE,
+                    MAX_SIZE,
                 )
-    df_new_grid = pd.DataFrame(grid_results)
-    df_grid = pd.concat([existing_grid, df_new_grid], ignore_index=True)
+
+                # Update in-memory table so timeout pruning works immediately.
+                existing_grid = pd.concat([existing_grid, pd.DataFrame([result])], ignore_index=True)
+                append_result_row(EXPERIMENT_RESULTS_CSV, result)
+
+    df_grid = existing_grid.copy()
 
     if not df_grid.empty:
         df_grid = df_grid.sort_values(["strategy", "n_trials", "n_neighborhoods"]).drop_duplicates(
