@@ -10,8 +10,8 @@ import pickle
 import networkx as nx
 
 # Configuration
-DATASET = "data/ca-GrQc.pkl"
-STRATEGIES = ["beam", ]
+DATASET = "data/bitcoin_alpha_graph.pkl"
+STRATEGIES = ["beam", "mcts"]
 TRIALS_GRID = [3, 5]
 NEIGHBORHOODS_GRID = [10]
 MIN_SIZE = 3
@@ -22,10 +22,10 @@ RUN_TIMEOUT_SEC = 400
 SKIP_ALREADY_DONE = True
 SKIP_TIMEOUT_RUNS = False
 PRUNE_HARDER_AFTER_TIMEOUT = True
-EXPERIMENT_RESULTS_CSV = "results/grqc_assignment_experiment_results.csv"
-BEST_SUMMARY_TXT = "results/grqc_assignment_best_summary.txt"
-STRATEGY_VS_RUNTIME_PLOT = "plots/grqc_assignment_strategy_vs_runtime.png"
-CONFIG_VS_PATTERNS_PLOT = "plots/grqc_assignment_config_vs_patterns.png"
+EXPERIMENT_RESULTS_CSV = "results/btc_assignment_experiment_results.csv"
+BEST_SUMMARY_TXT = "results/btc_assignment_best_summary.txt"
+STRATEGY_VS_RUNTIME_PLOT = "plots/btc_assignment_strategy_vs_runtime.png"
+CONFIG_VS_PATTERNS_PLOT = "plots/btc_assignment_config_vs_patterns.png"
 
 def count_patterns_from_obj(obj):
     """Count mined patterns for common decoder output formats."""
@@ -269,7 +269,7 @@ def build_strategy_summary(df_grid):
         df_eval.groupby("strategy", as_index=False)
         .agg(
             runs=("strategy", "count"),
-            avg_runtime=("runtime", "mean"),
+            avg_runtime=("runtime(sec)", "mean"),
             avg_patterns=("num_patterns", "mean"),
         )
         .sort_values("strategy")
@@ -283,7 +283,7 @@ def summarize_best(df_grid):
         return None
 
     best_config = successful.sort_values(
-        ["num_patterns", "runtime"], ascending=[False, True]
+        ["num_patterns", "runtime(sec)"], ascending=[False, True]
     ).iloc[0]
 
     strategy_summary = build_strategy_summary(df_grid)
@@ -292,7 +292,7 @@ def summarize_best(df_grid):
     ).iloc[0]
 
     print("\n--- Best Config (max patterns, then min runtime) ---")
-    print(best_config[["strategy", "n_trials", "n_neighborhoods", "num_patterns", "runtime"]])
+    print(best_config[["strategy", "n_trials", "n_neighborhoods", "num_patterns", "runtime(sec)"]])
 
     print("\n--- Best Algorithm (avg over tuning grid) ---")
     print(best_algorithm[["strategy", "avg_patterns", "avg_runtime"]])
@@ -303,7 +303,7 @@ def summarize_best(df_grid):
             "n_trials": int(best_config["n_trials"]),
             "n_neighborhoods": int(best_config["n_neighborhoods"]),
             "num_patterns": int(best_config["num_patterns"]),
-            "runtime(sec)": float(best_config["runtime"]),
+            "runtime(sec)": float(best_config["runtime(sec)"]),
         },
         "best_algorithm": {
             "strategy": best_algorithm["strategy"],
@@ -338,7 +338,7 @@ def write_best_summary(best_summary):
         f"- n_trials: {best_config['n_trials']}",
         f"- n_neighborhoods: {best_config['n_neighborhoods']}",
         f"- num_patterns: {best_config['num_patterns']}",
-        f"- runtime_seconds: {best_config['runtime']:.4f}",
+        f"- runtime_seconds: {best_config['runtime(sec)']:.4f}",
         "",
         "Best Algorithm (avg over all successful configs):",
         f"- strategy: {best_algorithm['strategy']}",
