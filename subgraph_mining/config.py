@@ -68,12 +68,12 @@ def parse_decoder(parser):
     # Set default values
     parser.set_defaults(
         # Dataset defaults
-        dataset="enzymes",
+        dataset="metta.pkl",
         batch_size=1000,
         
         # Decoder defaults
-        out_path="results/patterns.p",
-        n_neighborhoods=100,
+        out_path="results/patterns.pkl",
+        n_neighborhoods=80,
         n_trials=100,
         decode_thresh=0.5,
         radius=3,
@@ -83,8 +83,8 @@ def parse_decoder(parser):
         graph_type="directed",
         min_pattern_size=3,
         max_pattern_size=5,
-        min_neighborhood_size=2,
-        max_neighborhood_size=3,
+        min_neighborhood_size=5,
+        max_neighborhood_size=8,
         search_strategy="greedy",
         out_batch_size=3,
         node_anchored=True,
@@ -92,3 +92,5 @@ def parse_decoder(parser):
         streaming_workers=4,
         auto_streaming_threshold=50000
     )
+
+    
