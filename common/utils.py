@@ -1,4 +1,5 @@
 from collections import defaultdict, Counter
+import hashlib
 
 from deepsnap.graph import Graph as DSGraph
 from deepsnap.batch import Batch
@@ -15,6 +16,17 @@ from tqdm import tqdm
 import warnings
 
 from common import feature_preprocess
+
+_node_label_vocab = None
+_edge_type_vocab = None
+_vocab_version = None
+
+
+def set_label_vocabs(node_vocab=None, edge_vocab=None, vocab_version=None):
+    global _node_label_vocab, _edge_type_vocab, _vocab_version
+    _node_label_vocab = node_vocab
+    _edge_type_vocab = edge_vocab
+    _vocab_version = vocab_version
 
 
 def sample_neigh(graphs, size, graph_type):
@@ -61,18 +73,79 @@ def vec_hash(v):
 def wl_hash(g, dim=64, node_anchored=False):
     g = nx.convert_node_labels_to_integers(g)
     vecs = np.zeros((len(g), dim), dtype=int)
-    if node_anchored:
-        for v in g.nodes:
-            if g.nodes[v]["anchor"] == 1:
-                vecs[v] = 1
-                break
+    for v in g.nodes:
+        node_data = g.nodes[v]
+        base = 0
+        if node_anchored and node_data.get("anchor", 0) == 1:
+            base ^= 1
+       
+        label_id = int(node_data.get("label_id", _stable_label_id(
+            node_data.get("label", "unknown"))))
+        base ^= (label_id << 1)
+        vecs[v] = base
     for i in range(len(g)):
         newvecs = np.zeros((len(g), dim), dtype=int)
         for n in g.nodes:
-            newvecs[n] = vec_hash(np.sum(vecs[list(g.neighbors(n)) + [n]],
-                axis=0))
+            # Direction-aware neighborhood aggregation for semantic hashing
+            neigh_vec = vecs[n].copy()
+            if g.is_directed():
+                succ_nodes = list(g.successors(n))
+                pred_nodes = list(g.predecessors(n))
+                if succ_nodes:
+                    neigh_vec += np.sum(vecs[succ_nodes], axis=0)
+                if pred_nodes:
+                    neigh_vec += 3 * np.sum(vecs[pred_nodes], axis=0)
+                edge_sem = 0
+                for nbr in succ_nodes:
+                    edge_sem ^= _edge_semantic_mix(g.get_edge_data(n, nbr), forward=True)
+                for nbr in pred_nodes:
+                    edge_sem ^= _edge_semantic_mix(g.get_edge_data(n, nbr), forward=False)
+                neigh_vec[0] ^= edge_sem
+            else:
+                neighbors = list(g.neighbors(n))
+                if neighbors:
+                    neigh_vec += np.sum(vecs[neighbors], axis=0)
+                edge_sem = 0
+                for nbr in neighbors:
+                    edge_sem ^= _edge_semantic_mix(g.get_edge_data(n, nbr), forward=True)
+                neigh_vec[0] ^= edge_sem
+            newvecs[n] = vec_hash(neigh_vec)
         vecs = newvecs
     return tuple(np.sum(vecs, axis=0))
+
+
+def _stable_int(text, max_value=2**31 - 1):
+    """Deterministic integer id from text (stable across runs/processes)."""
+    digest = hashlib.blake2b(str(text).encode("utf-8"), digest_size=8).digest()
+    value = int.from_bytes(digest, byteorder="big", signed=False)
+    return value % max_value
+
+
+def _stable_label_id(label):
+    if _node_label_vocab is not None:
+        return int(_node_label_vocab.get(str(label), _node_label_vocab.get("UNK", 0)))
+    if label is None:
+        return 0
+    return _stable_int(f"node::{label}") + 1
+
+
+def _stable_edge_type_id(edge_type):
+    if _edge_type_vocab is not None:
+        return int(_edge_type_vocab.get(str(edge_type), _edge_type_vocab.get("UNK", 0)))
+    if edge_type is None:
+        return 0
+    return _stable_int(f"edge::{edge_type}") + 1
+
+
+def _edge_semantic_mix(edge_data, forward):
+    edge_data = edge_data or {}
+    if "type_id" in edge_data:
+        edge_type_id = int(edge_data["type_id"])
+    else:
+        edge_type = edge_data.get("type") or "unknown"
+        edge_type_id = _stable_edge_type_id(edge_type)
+    direction_bias = 11 if forward else 19
+    return (edge_type_id * 1315423911) ^ direction_bias
 
 def gen_baseline_queries_rand_esu(queries, targets, node_anchored=False):
     sizes = Counter([len(g) for g in queries])
@@ -237,8 +310,8 @@ def standardize_graph(graph: nx.Graph, anchor: int = None) -> nx.Graph:
     else:
         g = nx.Graph()
 
-    g.add_nodes_from(graph.nodes())
-    g.add_edges_from(graph.edges())
+    g.add_nodes_from((n, dict(attrs)) for n, attrs in graph.nodes(data=True))
+    g.add_edges_from((u, v, dict(attrs)) for u, v, attrs in graph.edges(data=True))
    # g = graph.copy()
     
     # Standardize edge attributes
@@ -249,6 +322,17 @@ def standardize_graph(graph: nx.Graph, anchor: int = None) -> nx.Graph:
         bad_keys = [k for k in list(edge_data.keys()) if not isinstance(k, str) or k.strip() == "" or isinstance(k, dict)]
         for k in bad_keys:
             del edge_data[k]
+
+        # DeepSNAP compatibility: keep only numeric/scalar edge attributes.
+        # Any string/object attrs can trigger "Unknown type of key {} in edge attributes."
+        for k in list(edge_data.keys()):
+            v_attr = edge_data[k]
+            if isinstance(v_attr, bool):
+                edge_data[k] = float(v_attr)
+            elif isinstance(v_attr, (int, float, np.integer, np.floating)):
+                edge_data[k] = float(v_attr)
+            else:
+                del edge_data[k]
 
         # Clean empty edge attributes if any
         if len(edge_data) == 0:
@@ -262,10 +346,10 @@ def standardize_graph(graph: nx.Graph, anchor: int = None) -> nx.Graph:
             except (ValueError, TypeError):
                 edge_data['weight'] = 1.0
         
-        # Handle edge type
-        if 'type' in edge_data:
-            edge_data['type_str'] = str(edge_data['type'])
-            edge_data['type'] = float(hash(str(edge_data['type'])) % 1000)
+        # Deterministic edge-type normalization for semantic mining.
+        edge_type_raw = edge_data.get('type', "unknown")
+        edge_data['type_id'] = int(_stable_edge_type_id(edge_type_raw))
+        edge_data['type'] = float(edge_data['type_id'])
     
     # Standardize node attributes
     for node in g.nodes():
@@ -281,6 +365,7 @@ def standardize_graph(graph: nx.Graph, anchor: int = None) -> nx.Graph:
         # Ensure label exists
         if 'label' not in node_data:
             node_data['label'] = str(node)
+        node_data['label_id'] = int(_stable_label_id(node_data.get('label')))
             
         # Ensure id exists
         if 'id' not in node_data:

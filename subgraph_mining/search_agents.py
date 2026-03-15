@@ -286,8 +286,9 @@ def run_greedy_trial(trial_idx):
     """
     global worker_model, worker_graphs, worker_embs, worker_args
     
-    random.seed(int.from_bytes(os.urandom(4), 'little') + trial_idx)
-    np.random.seed(int.from_bytes(os.urandom(4), 'little') + trial_idx)
+    base_seed = int(getattr(worker_args, "seed", 42))
+    random.seed(base_seed + int(trial_idx))
+    np.random.seed(base_seed + int(trial_idx))
 
     ps = np.array([len(g) for g in worker_graphs], dtype=np.float32)
     ps /= np.sum(ps)

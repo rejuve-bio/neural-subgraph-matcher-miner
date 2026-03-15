@@ -43,6 +43,30 @@ def parse_encoder(parser, arg_str=None):
         help='tag to identify the run')
     enc_parser.add_argument("--graph_pkl_path", type=str, default=None,
                     help="Path to the .pkl file containing the graph to be used for training")
+    enc_parser.add_argument('--semantic_preset', type=str,
+                    help='Semantic synthetic preset: biology, ecommerce, or social')
+    enc_parser.add_argument('--semantic_mix_presets', type=str,
+                    help='Comma-separated presets for mixed training, e.g. biology,ecommerce,social')
+    enc_parser.add_argument('--semantic_mix_weights', type=str,
+                    help='Comma-separated weights for semantic_mix_presets, e.g. 0.4,0.4,0.2')
+    enc_parser.add_argument('--val_semantic_preset', type=str,
+                    help='Optional heldout semantic preset for validation/test generation')
+    enc_parser.add_argument('--label_neg_ratio', type=float,
+                    help='Fraction of negatives that are label-corruption negatives')
+    enc_parser.add_argument('--hard_negative_ratio', type=float,
+                    help='Fraction of structural negatives sampled as harder near-miss negatives')
+    enc_parser.add_argument('--label_noise', type=float,
+                    help='Label corruption rate during semantic synthetic generation')
+    enc_parser.add_argument('--use_label_features', action="store_true",
+                    help='Augment node features with label_id buckets')
+    enc_parser.add_argument('--label_feature_dim', type=int,
+                    help='One-hot dimension for label_id feature buckets')
+    enc_parser.add_argument('--seed', type=int,
+                    help='Global random seed')
+    enc_parser.add_argument('--order_threshold_mode', type=str,
+                    help='Prediction mode for order model: clf or margin')
+    enc_parser.add_argument('--order_margin_factor', type=float,
+                    help='When threshold_mode=margin, classify as positive if score <= margin*factor')
 
     enc_parser.set_defaults(conv_type='SAGE',
                         method_type='order',
@@ -65,7 +89,19 @@ def parse_encoder(parser, arg_str=None):
                         model_path="ckpt/model.pt",
                         tag='',
                         val_size=128,
-                        node_anchored=True)
+                        node_anchored=True,
+                        semantic_preset='biology',
+                        semantic_mix_presets='biology,ecommerce,social',
+                        semantic_mix_weights='0.34,0.33,0.33',
+                        val_semantic_preset='',
+                        label_neg_ratio=0.5,
+                        hard_negative_ratio=0.5,
+                        label_noise=0.05,
+                        use_label_features=False,
+                        label_feature_dim=16,
+                        seed=42,
+                        order_threshold_mode='clf',
+                        order_margin_factor=0.5)
 
     #return enc_parser.parse_args(arg_str)
 
