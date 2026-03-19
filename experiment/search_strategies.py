@@ -10,64 +10,22 @@ import pickle
 import networkx as nx
 
 # Configuration
-DATASET = "data/bitcoin_alpha_graph.pkl"
-STRATEGIES = ["beam", "mcts"]
+DATASET = 'enzymes' # "data/<custom_dataset>.pkl" if downloaded a custom dataset
+STRATEGIES = ["beam", "mcts", "greedy"]
 TRIALS_GRID = [3, 5, 10]
-NEIGHBORHOODS_GRID = [10, 20, 50]
+NEIGHBORHOODS_GRID = [10, 20, 50, 100]
 MIN_SIZE = 3
-MAX_SIZE = 5
-OUT_BATCH_SIZE = 3
+MAX_SIZE = 10
+OUT_BATCH_SIZE = 4
 BEAM_WIDTH = 2
 RUN_TIMEOUT_SEC = 400
 SKIP_ALREADY_DONE = True
-SKIP_TIMEOUT_RUNS = False
+SKIP_TIMEOUT_RUNS = True
 PRUNE_HARDER_AFTER_TIMEOUT = True
-EXPERIMENT_RESULTS_CSV = "results/btc_experiment_results.csv"
-BEST_SUMMARY_TXT = "results/btc_best_summary.txt"
-STRATEGY_VS_RUNTIME_PLOT = "plots/btc_strategy_vs_runtime.png"
-CONFIG_VS_PATTERNS_PLOT = "plots/btc_config_vs_patterns.png"
-
-def count_patterns_from_obj(obj):
-    """Count mined patterns for common decoder output formats."""
-    if obj is None:
-        return 0
-
-    if isinstance(obj, dict):
-        total = 0
-        for value in obj.values():
-            total += count_patterns_from_obj(value)
-        return total
-
-    if isinstance(obj, (list, tuple, set)):
-        if not obj:
-            return 0
-
-        # Common shape: list of NetworkX graphs.
-        if all(isinstance(item, (nx.Graph, nx.DiGraph)) for item in obj):
-            return len(obj)
-
-        # Common shape: list of pattern descriptors.
-        if all(isinstance(item, dict) for item in obj):
-            return len(obj)
-
-        # Fallback for nested collections.
-        return sum(count_patterns_from_obj(item) for item in obj)
-
-    # Single graph or object fallback.
-    return 1
-
-
-def count_patterns_from_output(out_path):
-    if not os.path.exists(out_path):
-        return 0
-
-    try:
-        with open(out_path, "rb") as f:
-            data = pickle.load(f)
-        return count_patterns_from_obj(data)
-    except Exception as e:
-        print(f"Warning: could not parse {out_path}: {e}")
-        return 0
+EXPERIMENT_RESULTS_CSV = "results/enzymes_experiment_results.csv"
+BEST_SUMMARY_TXT = "results/enzymes_best_summary.txt"
+STRATEGY_VS_RUNTIME_PLOT = "plots/enzymes_strategy_vs_runtime.png"
+CONFIG_VS_PATTERNS_PLOT = "plots/enzymes_config_vs_patterns.png"
 
 
 def count_instances_from_all_instances_json(all_instances_json_path):
@@ -176,8 +134,6 @@ def run_experiment(strategy, dataset, n_trials, n_neighborhoods, min_pattern_siz
         runtime = time.time() - start_time
         # Prefer all-instances count for analysis; fallback to .p parsing.
         num_patterns = count_instances_from_all_instances_json(all_instances_json_path)
-        if num_patterns is None:
-            num_patterns = count_patterns_from_output(out_path)
 
         return {
             "strategy": strategy,
@@ -429,7 +385,6 @@ def main():
     print(f"- {BEST_SUMMARY_TXT}")
     print(f"- {STRATEGY_VS_RUNTIME_PLOT}")
     print(f"- {CONFIG_VS_PATTERNS_PLOT}")
-
 
 if __name__ == "__main__":
     main()
