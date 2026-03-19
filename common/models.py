@@ -40,7 +40,8 @@ class OrderEmbedder(nn.Module):
         self.margin = args.margin
         self.use_intersection = False
 
-        self.clf_model = nn.Sequential(nn.Linear(1, 2), nn.LogSoftmax(dim=-1))
+        # Use CrossEntropyLoss on these logits during training.
+        self.clf_model = nn.Sequential(nn.Linear(1, 2))
 
     def forward(self, emb_as, emb_bs):
         return emb_as, emb_bs
@@ -123,11 +124,13 @@ class SkipLastGNN(nn.Module):
         if args.conv_type == "PNA":
             post_input_dim *= 3
         self.post_mp = nn.Sequential(
-            nn.Linear(post_input_dim, hidden_dim), nn.Dropout(args.dropout),
+            nn.Linear(post_input_dim, hidden_dim), 
+            nn.Dropout(args.dropout),
             nn.LeakyReLU(0.1),
             nn.Linear(hidden_dim, output_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, 256), nn.ReLU(),
+            nn.Linear(output_dim, 256), 
+            nn.ReLU(),
             nn.Linear(256, hidden_dim))
         #self.batch_norm = nn.BatchNorm1d(output_dim, eps=1e-5, momentum=0.1)
         self.skip = args.skip

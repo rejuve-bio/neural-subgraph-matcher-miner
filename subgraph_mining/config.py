@@ -29,7 +29,7 @@ def parse_decoder(parser):
     
     # Search strategy parameters
     dec_parser.add_argument('--search_strategy', type=str,
-        help='"greedy" or "mcts" search strategy')
+        help='"greedy" or "mcts" or "beam" search strategy')
     dec_parser.add_argument('--n_trials', type=int,
         help='number of search trials to run')
     dec_parser.add_argument('--out_batch_size', type=int,
@@ -76,15 +76,15 @@ def parse_decoder(parser):
         n_neighborhoods=100,
         n_trials=100,
         decode_thresh=0.5,
-        radius=3,
+        radius=8,
         subgraph_sample_size=0,
         sample_method="tree",
         skip="learnable",
         graph_type="directed",
         min_pattern_size=3,
         max_pattern_size=5,
-        min_neighborhood_size=2,
-        max_neighborhood_size=3,
+        min_neighborhood_size=3,
+        max_neighborhood_size=10,
         search_strategy="greedy",
         out_batch_size=3,
         node_anchored=True,
