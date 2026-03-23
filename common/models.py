@@ -140,11 +140,8 @@ class SkipLastGNN(nn.Module):
         if model_type == "GCN":
             return pyg_nn.GCNConv
         elif model_type == "GIN":
-            #return lambda i, h: pyg_nn.GINConv(nn.Sequential(
-            #    nn.Linear(i, h), nn.ReLU()))
-            return lambda i, h: GINConv(nn.Sequential(
-                nn.Linear(i, h), nn.ReLU(), nn.Linear(h, h)
-                ))
+            return lambda i, h: pyg_nn.GINConv(nn.Sequential(
+                nn.Linear(i, h), nn.ReLU(), nn.Linear(h, h)))
         elif model_type == "SAGE":
             return SAGEConv
         elif model_type == "graph":
@@ -259,35 +256,3 @@ class SAGEConv(pyg_nn.MessagePassing):
     def __repr__(self):
         return '{}({}, {})'.format(self.__class__.__name__, self.in_channels,
                                    self.out_channels)
-
-# pytorch geom GINConv + weighted edges
-class GINConv(pyg_nn.MessagePassing):
-    def __init__(self, nn, eps=0, train_eps=False, **kwargs):
-        super(GINConv, self).__init__(aggr='add', **kwargs)
-        self.nn = nn
-        self.initial_eps = eps
-        if train_eps:
-            self.eps = torch.nn.Parameter(torch.Tensor([eps]))
-        else:
-            self.register_buffer('eps', torch.Tensor([eps]))
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        #reset(self.nn)
-        self.eps.data.fill_(self.initial_eps)
-
-    def forward(self, x, edge_index, edge_weight=None):
-        """"""
-        x = x.unsqueeze(-1) if x.dim() == 1 else x
-        edge_index, edge_weight = pyg_utils.remove_self_loops(edge_index,
-            edge_weight)
-        out = self.nn((1 + self.eps) * x + self.propagate(edge_index, x=x,
-            edge_weight=edge_weight))
-        return out
-
-    def message(self, x_j, edge_weight):
-        return x_j if edge_weight is None else edge_weight.view(-1, 1) * x_j
-
-    def __repr__(self):
-        return '{}(nn={})'.format(self.__class__.__name__, self.nn)
-
