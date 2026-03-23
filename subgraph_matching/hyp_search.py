@@ -1,6 +1,6 @@
 def parse_encoder(parser):
     parser.opt_list('--conv_type', type=str, tunable=True, 
-            options=['GIN', 'SAGE'],#, 'GCN'],#, 'GAT'],
+                        options=['GIN', 'SAGE', 'RGCN'],#, 'GCN'],#, 'GAT'],
             help='type of model')
     parser.opt_list('--skip', type=str, tunable=True, 
             options=['all', 'last'],#, 'GCN'],#, 'GAT'],
@@ -27,6 +27,8 @@ def parse_encoder(parser):
     # non-tunable
     parser.add_argument('--n_inner_layers', type=int,
                         help='Number of inner graph conv layers (gatedgraphconv)')
+    parser.add_argument('--num_relations', type=int, help='Number of edge relation types (RGCN only)')
+    parser.add_argument('--num_bases', type=int, help='Number of bases for RGCN basis decomposition')
     parser.add_argument('--max_graph_size', type=int,
                         help='max training graph size')
     parser.add_argument('--n_batches', type=int,
@@ -62,6 +64,8 @@ def parse_encoder(parser):
                         method_type='order',
                         dataset='syn',
                         n_layers=8,
+                        num_relations=1,
+                        num_bases=1,
                         batch_size=64,
                         hidden_dim=64,
                         skip="learnable",
