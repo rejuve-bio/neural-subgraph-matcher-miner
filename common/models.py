@@ -123,13 +123,16 @@ class SkipLastGNN(nn.Module):
         if args.conv_type == "PNA":
             post_input_dim *= 3
         self.post_mp = nn.Sequential(
-            nn.Linear(post_input_dim, hidden_dim), nn.Dropout(args.dropout),
+            nn.Linear(post_input_dim, hidden_dim * 2),
+            nn.Dropout(args.dropout),
+            nn.LayerNorm(hidden_dim * 2),
             nn.LeakyReLU(0.1),
-            nn.Linear(hidden_dim, output_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 256), nn.ReLU(),
-            nn.Linear(256, hidden_dim))
-        #self.batch_norm = nn.BatchNorm1d(output_dim, eps=1e-5, momentum=0.1)
+            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.Dropout(args.dropout),
+            nn.LayerNorm(hidden_dim),
+            nn.LeakyReLU(0.1),
+            nn.Linear(hidden_dim, output_dim)
+        )
         self.skip = args.skip
         self.conv_type = args.conv_type
 
