@@ -128,11 +128,13 @@ def train(args, model,in_queue, out_queue):
                 with torch.no_grad():
                     pred = model.predict(pred)
                 model.clf_model.zero_grad()
-                pred = model.clf_model(pred.unsqueeze(1))
-                criterion = nn.NLLLoss()
-                clf_loss = criterion(pred, labels)
+                logits = model.clf_model(pred.unsqueeze(1))
+                # use CrossEntropyLoss on logits
+                criterion = nn.CrossEntropyLoss()
+                clf_loss = criterion(logits, labels)
                 clf_loss.backward()
                 clf_opt.step()
+                pred = logits
             pred = pred.argmax(dim=-1)
             acc = torch.mean((pred == labels).type(torch.float))
             train_loss = loss.item()
