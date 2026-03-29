@@ -1,5 +1,7 @@
 from collections import defaultdict, Counter
+import json
 import hashlib
+import os
 
 from deepsnap.graph import Graph as DSGraph
 from deepsnap.batch import Batch
@@ -20,6 +22,7 @@ from common import feature_preprocess
 _node_label_vocab = None
 _edge_type_vocab = None
 _vocab_version = None
+MODEL_METADATA_VERSION = "v1"
 
 
 def set_label_vocabs(node_vocab=None, edge_vocab=None, vocab_version=None):
@@ -27,6 +30,64 @@ def set_label_vocabs(node_vocab=None, edge_vocab=None, vocab_version=None):
     _node_label_vocab = node_vocab
     _edge_type_vocab = edge_vocab
     _vocab_version = vocab_version
+
+
+def build_model_metadata(args):
+    keys = [
+        "dataset",
+        "semantic_mode",
+        "use_label_features",
+        "label_feature_dim",
+        "label_encoder_backend",
+        "label_encoder_name",
+        "label_encoder_cache_dir",
+        "text_encoder_dim",
+        "text_label_dim",
+        "encoder_type",
+        "num_relations",
+        "num_bases",
+        "rel_reg_lambda",
+        "conv_type",
+        "hidden_dim",
+        "n_layers",
+        "skip",
+        "dropout",
+        "node_anchored",
+        "margin",
+        "order_threshold_mode",
+        "order_margin_factor",
+        "seed",
+    ]
+    meta = {"metadata_version": MODEL_METADATA_VERSION}
+    for key in keys:
+        if hasattr(args, key):
+            meta[key] = getattr(args, key)
+    if hasattr(args, "vocab_version"):
+        meta["vocab_version"] = getattr(args, "vocab_version")
+    return meta
+
+
+def model_metadata_path(model_path):
+    return model_path + ".meta.json"
+
+
+def save_model_metadata(args, model_path):
+    meta_path = model_metadata_path(model_path)
+    meta_dir = os.path.dirname(meta_path)
+    if meta_dir and not os.path.exists(meta_dir):
+        os.makedirs(meta_dir)
+    with open(meta_path, "w") as f:
+        json.dump(build_model_metadata(args), f, indent=2, sort_keys=True)
+
+
+def load_model_metadata(model_path, required=False):
+    meta_path = model_metadata_path(model_path)
+    if not os.path.exists(meta_path):
+        if required:
+            raise FileNotFoundError("Missing model metadata: {}".format(meta_path))
+        return None
+    with open(meta_path, "r") as f:
+        return json.load(f)
 
 
 def sample_neigh(graphs, size, graph_type):
