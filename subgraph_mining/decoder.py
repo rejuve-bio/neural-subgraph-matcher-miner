@@ -1424,6 +1424,14 @@ def main():
         feature_preprocess.configure_feature_augment(
             include_label_id=use_label_features,
             label_feature_dim=label_feature_dim,
+            semantic_mode=getattr(args, "semantic_mode", "categorical"),
+            label_encoder_backend=getattr(args, "label_encoder_backend", "auto"),
+            label_encoder_name=getattr(args, "label_encoder_name",
+                "sentence-transformers/all-MiniLM-L6-v2"),
+            label_encoder_cache_dir=getattr(args, "label_encoder_cache_dir",
+                "artifacts/label_encoder_cache"),
+            text_encoder_dim=getattr(args, "text_encoder_dim", 384),
+            text_label_dim=getattr(args, "text_label_dim", 64),
         )
         random.seed(args.seed)
         np.random.seed(args.seed)
