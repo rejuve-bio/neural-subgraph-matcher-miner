@@ -94,6 +94,8 @@ class UniversalLabelEncoder:
         return self._backend
 
     def _resolve_backend(self):
+        if self.requested_backend == "cache_only":
+            return "cache_only"
         if self.requested_backend == "hashing":
             return "hashing"
         if self.requested_backend in {"auto", "sentence_transformers"}:
@@ -176,6 +178,12 @@ class UniversalLabelEncoder:
                 if cached is not None:
                     out[i] = cached
                 else:
+                    if self.backend == "cache_only":
+                        raise FileNotFoundError(
+                            "Missing cached label embedding for '{}' in cache_dir='{}'".format(
+                                label_text, self.cache_dir
+                            )
+                        )
                     uncached_texts.append(label_text)
                     uncached_positions.append(i)
 
