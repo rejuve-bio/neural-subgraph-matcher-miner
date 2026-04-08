@@ -83,8 +83,11 @@ class OrderEmbedder(nn.Module):
 class SkipLastGNN(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim, args):
         super(SkipLastGNN, self).__init__()
+        self.batch_norm = nn.BatchNorm1d(output_dim)
         self.dropout = args.dropout
         self.n_layers = args.n_layers
+        self.num_relations = args.num_relations
+        self.num_bases = args.num_bases
 
         if len(feature_preprocess.FEATURE_AUGMENT) > 0:
             self.feat_preprocess = feature_preprocess.Preprocess(input_dim)
@@ -123,13 +126,16 @@ class SkipLastGNN(nn.Module):
         if args.conv_type == "PNA":
             post_input_dim *= 3
         self.post_mp = nn.Sequential(
-            nn.Linear(post_input_dim, hidden_dim), nn.Dropout(args.dropout),
+            nn.Linear(post_input_dim, hidden_dim * 2),
+            nn.Dropout(args.dropout),
+            nn.LayerNorm(hidden_dim * 2),
             nn.LeakyReLU(0.1),
-            nn.Linear(hidden_dim, output_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 256), nn.ReLU(),
-            nn.Linear(256, hidden_dim))
-        #self.batch_norm = nn.BatchNorm1d(output_dim, eps=1e-5, momentum=0.1)
+            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.Dropout(args.dropout),
+            nn.LayerNorm(hidden_dim),
+            nn.LeakyReLU(0.1),
+            nn.Linear(hidden_dim, output_dim)
+        )
         self.skip = args.skip
         self.conv_type = args.conv_type
 
@@ -137,13 +143,10 @@ class SkipLastGNN(nn.Module):
         if model_type == "GCN":
             return pyg_nn.GCNConv
         elif model_type == "GIN":
-            #return lambda i, h: pyg_nn.GINConv(nn.Sequential(
-            #    nn.Linear(i, h), nn.ReLU()))
-            return lambda i, h: GINConv(nn.Sequential(
-                nn.Linear(i, h), nn.ReLU(), nn.Linear(h, h)
-                ))
+            return lambda i, h: pyg_nn.GINConv(nn.Sequential(
+                nn.Linear(i, h), nn.ReLU(), nn.Linear(h, h)))
         elif model_type == "SAGE":
-            return SAGEConv
+            return pyg_nn.SAGEConv
         elif model_type == "graph":
             return pyg_nn.GraphConv
         elif model_type == "GAT":
@@ -151,7 +154,9 @@ class SkipLastGNN(nn.Module):
         elif model_type == "gated":
             return lambda i, h: pyg_nn.GatedGraphConv(h, n_inner_layers)
         elif model_type == "PNA":
-            return SAGEConv
+            return pyg_nn.SAGEConv
+        elif model_type == "RGCN":
+            return lambda i, h: pyg_nn.RGCNConv(i, h, self.num_relations, self.num_bases)
         else:
             print("unrecognized model type")
 
@@ -165,6 +170,14 @@ class SkipLastGNN(nn.Module):
                 data = self.feat_preprocess(data)
                 data.preprocessed = True
         x, edge_index, batch = data.node_feature, data.edge_index, data.batch
+        edge_type = None
+        if self.conv_type == "RGCN":
+            if hasattr(data, "edge_type") and data.edge_type is not None:
+                edge_type = data.edge_type
+            else:
+                # Fallback: single relation type for all edges.
+                edge_type = torch.zeros(edge_index.size(1), dtype=torch.long,
+                    device=edge_index.device)
         x = self.pre_mp(x)
 
         all_emb = x.unsqueeze(1)
@@ -180,6 +193,8 @@ class SkipLastGNN(nn.Module):
                     x = torch.cat((self.convs_sum[i](curr_emb, edge_index),
                         self.convs_mean[i](curr_emb, edge_index),
                         self.convs_max[i](curr_emb, edge_index)), dim=-1)
+                elif self.conv_type == "RGCN":
+                    x = self.convs[i](curr_emb, edge_index, edge_type)
                 else:
                     x = self.convs[i](curr_emb, edge_index)
             elif self.skip == 'all':
@@ -187,104 +202,26 @@ class SkipLastGNN(nn.Module):
                     x = torch.cat((self.convs_sum[i](emb, edge_index),
                         self.convs_mean[i](emb, edge_index),
                         self.convs_max[i](emb, edge_index)), dim=-1)
+                elif self.conv_type == "RGCN":
+                    x = self.convs[i](emb, edge_index, edge_type)
                 else:
                     x = self.convs[i](emb, edge_index)
             else:
-                x = self.convs[i](x, edge_index)
+                if self.conv_type == "RGCN":
+                    x = self.convs[i](x, edge_index, edge_type)
+                else:
+                    x = self.convs[i](x, edge_index)
             x = F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
             emb = torch.cat((emb, x), 1)
             if self.skip == 'learnable':
                 all_emb = torch.cat((all_emb, x.unsqueeze(1)), 1)
 
-        # x = pyg_nn.global_mean_pool(x, batch)
         emb = pyg_nn.global_add_pool(emb, batch)
         emb = self.post_mp(emb)
-        #emb = self.batch_norm(emb)   # TODO: test
-        #out = F.log_softmax(emb, dim=1)
+        emb = self.batch_norm(emb)
+        out = F.log_softmax(emb, dim=1)
         return emb
 
     def loss(self, pred, label):
         return F.nll_loss(pred, label)
-
-class SAGEConv(pyg_nn.MessagePassing):
-    def __init__(self, in_channels, out_channels, aggr="add"):
-        super(SAGEConv, self).__init__(aggr=aggr)
-
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-
-        self.lin = nn.Linear(in_channels, out_channels)
-        self.lin_update = nn.Linear(out_channels + in_channels,
-            out_channels)
-
-    def forward(self, x, edge_index, edge_weight=None, size=None,
-                res_n_id=None):
-        """
-        Args:
-            res_n_id (Tensor, optional): Residual node indices coming from
-                :obj:`DataFlow` generated by :obj:`NeighborSampler` are used to
-                select central node features in :obj:`x`.
-                Required if operating in a bipartite graph and :obj:`concat` is
-                :obj:`True`. (default: :obj:`None`)
-        """
-        #edge_index, edge_weight = add_remaining_self_loops(
-        #    edge_index, edge_weight, 1, x.size(self.node_dim))
-        edge_index, _ = pyg_utils.remove_self_loops(edge_index)
-
-        return self.propagate(edge_index, size=size, x=x,
-                              edge_weight=edge_weight, res_n_id=res_n_id)
-
-    def message(self, x_j, edge_weight):
-        #return x_j if edge_weight is None else edge_weight.view(-1, 1) * x_j
-        return self.lin(x_j)
-
-    def update(self, aggr_out, x, res_n_id):
-        aggr_out = torch.cat([aggr_out, x], dim=-1)
-
-        aggr_out = self.lin_update(aggr_out)
-        #aggr_out = torch.matmul(aggr_out, self.weight)
-
-        #if self.bias is not None:
-        #    aggr_out = aggr_out + self.bias
-
-        #if self.normalize:
-        #    aggr_out = F.normalize(aggr_out, p=2, dim=-1)
-
-        return aggr_out
-
-    def __repr__(self):
-        return '{}({}, {})'.format(self.__class__.__name__, self.in_channels,
-                                   self.out_channels)
-
-# pytorch geom GINConv + weighted edges
-class GINConv(pyg_nn.MessagePassing):
-    def __init__(self, nn, eps=0, train_eps=False, **kwargs):
-        super(GINConv, self).__init__(aggr='add', **kwargs)
-        self.nn = nn
-        self.initial_eps = eps
-        if train_eps:
-            self.eps = torch.nn.Parameter(torch.Tensor([eps]))
-        else:
-            self.register_buffer('eps', torch.Tensor([eps]))
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        #reset(self.nn)
-        self.eps.data.fill_(self.initial_eps)
-
-    def forward(self, x, edge_index, edge_weight=None):
-        """"""
-        x = x.unsqueeze(-1) if x.dim() == 1 else x
-        edge_index, edge_weight = pyg_utils.remove_self_loops(edge_index,
-            edge_weight)
-        out = self.nn((1 + self.eps) * x + self.propagate(edge_index, x=x,
-            edge_weight=edge_weight))
-        return out
-
-    def message(self, x_j, edge_weight):
-        return x_j if edge_weight is None else edge_weight.view(-1, 1) * x_j
-
-    def __repr__(self):
-        return '{}(nn={})'.format(self.__class__.__name__, self.nn)
-

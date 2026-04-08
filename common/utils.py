@@ -242,9 +242,13 @@ def standardize_graph(graph: nx.Graph, anchor: int = None) -> nx.Graph:
    # g = graph.copy()
     
     # Standardize edge attributes
+    ii = 0
     for u, v in g.edges():
         edge_data = g.edges[u, v]
-
+        # if ii <= 1:
+        #     ii += 1
+        #     print(f" G.edges: ", g.edges(data=True))
+        #     print("  Original edge data: ", edge_data)
         # Remove invalid keys
         bad_keys = [k for k in list(edge_data.keys()) if not isinstance(k, str) or k.strip() == "" or isinstance(k, dict)]
         for k in bad_keys:
@@ -347,3 +351,21 @@ def get_memory_usage():
     if torch.cuda.is_available():
         return torch.cuda.memory_allocated() / 1024**2 
     return 0
+
+def lightweight_batch_nx_graphs(graphs, anchors=None):
+    """
+    A streamlined version of batch_nx_graphs that skips expensive feature augmentation.
+    It assumes graphs are already standardized and ready for model consumption.
+    """
+    processed_graphs = []
+    for i, graph in enumerate(graphs):
+        anchor = anchors[i] if anchors is not None else None
+        
+        # The graph should already be standardized, but we ensure it one last time.
+        std_graph = standardize_graph(graph, anchor)
+        ds_graph = DSGraph(std_graph)
+        processed_graphs.append(ds_graph)
+
+    # Create a DeepSnap batch directly, without the FeatureAugmenter
+    batch = Batch.from_data_list(processed_graphs)
+    return batch.to(get_device())

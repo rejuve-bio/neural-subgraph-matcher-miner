@@ -286,17 +286,19 @@ def run_greedy_trial(trial_idx):
     """
     global worker_model, worker_graphs, worker_embs, worker_args
     
+    # Seeding for reproducibility in multiprocessing
     random.seed(int.from_bytes(os.urandom(4), 'little') + trial_idx)
     np.random.seed(int.from_bytes(os.urandom(4), 'little') + trial_idx)
 
+    # --- Dataset and Graph Selection ---
     ps = np.array([len(g) for g in worker_graphs], dtype=np.float32)
     ps /= np.sum(ps)
     graph_dist = stats.rv_discrete(values=(np.arange(len(worker_graphs)), ps))
-
     graph_idx = np.arange(len(worker_graphs))[graph_dist.rvs()]
     graph = worker_graphs[graph_idx]
     start_node = random.choice(list(graph.nodes))
 
+    # --- Initialization ---
     neigh = [start_node]
     if worker_args.graph_type == "undirected":
         frontier = list(set(graph.neighbors(start_node)) - set(neigh))
@@ -307,6 +309,16 @@ def run_greedy_trial(trial_idx):
     trial_patterns = defaultdict(list)
     trial_counts = defaultdict(default_dd_list)
 
+    # --- optimization here: Pre-load embeddings to device and use half precision ---
+    device = utils.get_device()
+    use_fp16 = torch.cuda.is_available()
+    
+    # Move all dataset embeddings to the GPU at once
+    embs_on_device = [emb.to(device) for emb in worker_embs]
+    if use_fp16:
+        embs_on_device = [emb.half() for emb in embs_on_device]
+
+    # --- Main Growth Loop ---
     while len(neigh) < worker_args.max_pattern_size and frontier:
         cand_neighs, anchors = [], []
         for cand_node in frontier:
@@ -318,31 +330,49 @@ def run_greedy_trial(trial_idx):
         if not cand_neighs:
             break
 
+        # --- Batch-process candidate embeddings ---
         with torch.no_grad():
-            cand_embs = worker_model.emb_model(utils.batch_nx_graphs(
+            cand_embs = worker_model.emb_model(utils.lightweight_batch_nx_graphs(
                 cand_neighs, anchors=anchors if worker_args.node_anchored else None))
+            if use_fp16:
+                cand_embs = cand_embs.half()
 
-        scored = []
-        for cand_node, cand_emb in zip(frontier, cand_embs):
-            score = 0
-            for emb_batch in worker_embs:
-                with torch.no_grad():
-                    if worker_args.method_type == "order":
-                        pred = worker_model.predict((emb_batch.to(utils.get_device()), cand_emb)).unsqueeze(1)
-                        score -= torch.sum(torch.argmax(worker_model.clf_model(pred), axis=1)).item()
-                    elif worker_args.method_type == "mlp":
-                        pred = worker_model(emb_batch.to(utils.get_device()), cand_emb.unsqueeze(0).expand(len(emb_batch), -1))
-                        score += torch.sum(pred[:,0]).item()
-            scored.append((score, cand_node))
+        # --- optimization here using Vectorized Scoring ---
+        scores = torch.zeros(len(cand_embs), device=device)
+        for emb_batch in embs_on_device:
+            # Expand cand_embs to match the batch size of dataset embeddings
+            # Shape: [n_dataset_embs, n_cand_embs, hidden_dim]
+            emb_as = emb_batch.unsqueeze(1).expand(-1, len(cand_embs), -1)
+            emb_bs = cand_embs.unsqueeze(0).expand(len(emb_batch), -1, -1)
+
+            # Flatten for batch prediction
+            emb_as_flat = emb_as.reshape(-1, emb_as.size(-1))
+            emb_bs_flat = emb_bs.reshape(-1, emb_bs.size(-1))
+
+            with torch.no_grad():
+                if worker_args.method_type == "order":
+                    pred = worker_model.predict((emb_as_flat, emb_bs_flat)).unsqueeze(1)
+                    batch_scores = torch.argmax(worker_model.clf_model(pred), axis=1)
+                    # Reshape back and sum over the dataset dimension
+                    scores -= batch_scores.reshape(len(emb_batch), len(cand_embs)).sum(dim=0)
+                elif worker_args.method_type == "mlp":
+                    pred = worker_model(emb_as_flat, emb_bs_flat)
+                    batch_scores = pred[:, 0]
+                    # Reshape back and sum over the dataset dimension
+                    scores += batch_scores.reshape(len(emb_batch), len(cand_embs)).sum(dim=0)
+        
+        scored = list(zip(scores.tolist(), frontier))
 
         if not scored:
             break
         scored.sort(key=lambda x: x[0])
         
+        # --- Node Selection ---
         out_bs = max(1, getattr(worker_args, 'out_batch_size', 3))
         n_cand = len(scored)
-        top_k = max(2, min(5, out_bs)) if out_bs >= 2 else 1  # at least 2 when user asked for 2+
+        top_k = max(2, min(5, out_bs)) if out_bs >= 2 else 1
         top_k = min(top_k, n_cand)
+        
         if n_cand == 1:
             best_score, best_node = scored[0]
         elif random.random() < 0.25 and n_cand > 1:
@@ -350,6 +380,7 @@ def run_greedy_trial(trial_idx):
         else:
             best_score, best_node = random.choice(scored[:top_k])
 
+        # --- Update Frontier and State ---
         if worker_args.graph_type == "undirected":
             frontier = list(((set(frontier) | set(graph.neighbors(best_node))) - visited) - {best_node})
         elif worker_args.graph_type == "directed":
@@ -358,6 +389,7 @@ def run_greedy_trial(trial_idx):
         visited.add(best_node)
         neigh.append(best_node)
 
+        # --- Store Discovered Patterns ---
         if len(neigh) >= worker_args.min_pattern_size:
             neigh_g = graph.subgraph(neigh).copy()
             neigh_g.remove_edges_from(nx.selfloop_edges(neigh_g))
