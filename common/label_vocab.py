@@ -17,9 +17,14 @@ def _extract_labels_from_graphs(graphs):
         if not isinstance(g, (nx.Graph, nx.DiGraph)):
             continue
         for _, data in g.nodes(data=True):
-            node_labels.add(str(data.get("label", "unknown")))
+            node_labels.add(str(data.get("semantic_label", data.get("label", "unknown"))))
         for _, _, data in g.edges(data=True):
-            edge_types.add(str(data.get("type", "unknown")))
+            edge_type = None
+            for key in ("type_str", "type", "relation", "edge_type", "label", "input_label"):
+                if data.get(key) is not None:
+                    edge_type = data.get(key)
+                    break
+            edge_types.add(str(edge_type if edge_type is not None else "unknown"))
     return _sorted_str_keys(node_labels), _sorted_str_keys(edge_types)
 
 

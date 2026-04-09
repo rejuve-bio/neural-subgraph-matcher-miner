@@ -513,6 +513,7 @@ def standardize_graph(graph: nx.Graph, anchor: int = None) -> nx.Graph:
     # Standardize edge attributes
     for u, v in g.edges():
         edge_data = g.edges[u, v]
+        edge_type_raw = edge_semantic_label(edge_data) or "unknown"
 
         # Remove invalid keys
         bad_keys = [k for k in list(edge_data.keys()) if not isinstance(k, str) or k.strip() == "" or isinstance(k, dict)]
@@ -542,8 +543,8 @@ def standardize_graph(graph: nx.Graph, anchor: int = None) -> nx.Graph:
             except (ValueError, TypeError):
                 edge_data['weight'] = 1.0
         
-        # Deterministic edge-type normalization for semantic mining.
-        edge_type_raw = edge_data.get('type', "unknown")
+        # Deterministic edge-type normalization for semantic mining. Capture the
+        # string relation before DeepSNAP-compatible sanitization deletes strings.
         edge_data['type_id'] = int(_stable_edge_type_id(edge_type_raw))
         edge_data['type'] = float(edge_data['type_id'])
     
