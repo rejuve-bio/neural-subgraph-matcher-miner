@@ -270,6 +270,11 @@ python scripts/precompute_label_cache.py \
   --backend cache_only
 ```
 
+For a new dataset, the cache must cover that dataset's labels.Should either:
+
+1. recompute/update the cache from the new typed PKL, or
+2. extract a compatible precomputed cache that already contains those labels.
+
 #### Train the Universal Semantic Checkpoint
 
 This is a maintainer step. Do it once, then reuse the checkpoint for mining.

@@ -2,9 +2,9 @@ name: Run Decoder
 
 on:
   push:
-    branches: [main, feature/node-labelling-R-GCN]
+    branches: [main]
   pull_request:
-    branches: [main, feature/node-labelling-R-GCN]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -42,10 +42,14 @@ jobs:
         run: |
           mkdir -p ${{ github.workspace }}/plots/cluster
           mkdir -p ${{ github.workspace }}/results
+          mkdir -p ${{ github.workspace }}/artifacts/hf_cache
           mkdir -p ${{ github.workspace }}/artifacts/label_encoder_cache_minilm_universal
           chmod -R 777 ${{ github.workspace }}/plots
           chmod -R 777 ${{ github.workspace }}/results
           chmod -R 777 ${{ github.workspace }}/artifacts
+      - name: Verify workflow inputs
+        run: |
+          test -f ${{ github.workspace }}/metta.pkl
       - name: Verify semantic checkpoint files
         run: |
           test -f ${{ github.workspace }}/ckpt/universal/model_universal_hybrid_minilm_rgcn.pt
@@ -62,23 +66,35 @@ jobs:
           echo "total_cpus=$TOTAL_CPUS" >> $GITHUB_OUTPUT
           echo "percent_used=$PERCENT_USED" >> $GITHUB_OUTPUT
 
-      - name: Run decoder in Docker container
+      - name: Run semantic decoder in Docker container
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/app \
             -e PYTHONUNBUFFERED=1 \
+            -e HF_TOKEN=${{ secrets.HF_TOKEN }} \
+            -e HUGGING_FACE_HUB_TOKEN=${{ secrets.HF_TOKEN }} \
+            -e HF_HOME=/app/artifacts/hf_cache \
+            -e SENTENCE_TRANSFORMERS_HOME=/app/artifacts/hf_cache/sentence_transformers \
             decoder-image:latest \
             bash -c "
               set -euo pipefail
-              echo 'Preparing semantic label cache...'
+              echo 'Preparing MiniLM semantic label cache for metta.pkl...'
               python scripts/precompute_label_cache.py \
-                --semantic_preset universal \
                 --graph_pkl metta.pkl \
                 --cache_dir /app/artifacts/label_encoder_cache_minilm_universal \
-                --backend hashing \
+                --backend sentence_transformers \
+                --label_encoder_name sentence-transformers/all-MiniLM-L6-v2 \
                 --batch_size 128
 
-              echo 'Starting decoder run...'
+              echo 'Verifying cache-only semantic path...'
+              python scripts/precompute_label_cache.py \
+                --graph_pkl metta.pkl \
+                --cache_dir /app/artifacts/label_encoder_cache_minilm_universal \
+                --backend cache_only \
+                --label_encoder_name sentence-transformers/all-MiniLM-L6-v2 \
+                --batch_size 128
+
+              echo 'Starting semantic decoder run on metta.pkl...'
               python -m subgraph_mining.decoder \
                 --dataset=metta.pkl \
                 --graph_type=directed \
