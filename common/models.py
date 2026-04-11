@@ -13,11 +13,34 @@ import torch_geometric.utils as pyg_utils
 from common import utils
 from common import feature_preprocess
 
+
+def _build_graph_encoder(input_dim, hidden_dim, args):
+    encoder_type = getattr(args, "encoder_type", "baseline")
+    if encoder_type == "rgcn_basis":
+        return RGCNBasisGNN(input_dim, hidden_dim, hidden_dim, args)
+    return SkipLastGNN(input_dim, hidden_dim, hidden_dim, args)
+
+
+def _extract_relation_ids(data, num_edges, num_relations):
+    rel_ids = getattr(data, "type_id", None)
+    if rel_ids is None:
+        rel_ids = getattr(data, "type", None)
+    if rel_ids is None:
+        return torch.zeros(num_edges, dtype=torch.long, device=data.edge_index.device)
+    rel_ids = rel_ids.view(-1).to(data.edge_index.device).long()
+    if rel_ids.numel() != num_edges:
+        rel_ids = rel_ids[:num_edges]
+        if rel_ids.numel() < num_edges:
+            pad = torch.zeros(num_edges - rel_ids.numel(), dtype=torch.long,
+                device=data.edge_index.device)
+            rel_ids = torch.cat((rel_ids, pad), dim=0)
+    return torch.clamp(rel_ids, min=0, max=max(0, num_relations - 1))
+
 # GNN -> concat -> MLP graph classification baseline
 class BaselineMLP(nn.Module):
     def __init__(self, input_dim, hidden_dim, args):
         super(BaselineMLP, self).__init__()
-        self.emb_model = SkipLastGNN(input_dim, hidden_dim, hidden_dim, args)
+        self.emb_model = _build_graph_encoder(input_dim, hidden_dim, args)
         self.mlp = nn.Sequential(nn.Linear(2 * hidden_dim, 256), nn.ReLU(),
             nn.Linear(256, 2))
 
@@ -36,7 +59,7 @@ class BaselineMLP(nn.Module):
 class OrderEmbedder(nn.Module):
     def __init__(self, input_dim, hidden_dim, args):
         super(OrderEmbedder, self).__init__()
-        self.emb_model = SkipLastGNN(input_dim, hidden_dim, hidden_dim, args)
+        self.emb_model = _build_graph_encoder(input_dim, hidden_dim, args)
         self.margin = args.margin
         self.use_intersection = False
 
@@ -77,6 +100,8 @@ class OrderEmbedder(nn.Module):
             device=utils.get_device()), margin - e)[labels == 0]
 
         relation_loss = torch.sum(e)
+        if hasattr(self.emb_model, "relation_regularization"):
+            relation_loss = relation_loss + self.emb_model.relation_regularization()
 
         return relation_loss
 
@@ -161,7 +186,7 @@ class SkipLastGNN(nn.Module):
 
         #x = self.pre_mp(x)
         if self.feat_preprocess is not None:
-            if not hasattr(data, "preprocessed"):
+            if not getattr(data, "preprocessed", False):
                 data = self.feat_preprocess(data)
                 data.preprocessed = True
         x, edge_index, batch = data.node_feature, data.edge_index, data.batch
@@ -206,6 +231,116 @@ class SkipLastGNN(nn.Module):
 
     def loss(self, pred, label):
         return F.nll_loss(pred, label)
+
+
+class RGCNBasisConv(pyg_nn.MessagePassing):
+    def __init__(self, in_channels, out_channels, num_relations, num_bases, aggr="add"):
+        super(RGCNBasisConv, self).__init__(aggr=aggr)
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.num_relations = int(max(1, num_relations))
+        self.num_bases = int(max(1, min(num_bases, self.num_relations)))
+
+        self.bases = nn.Parameter(torch.randn(self.num_bases, in_channels, out_channels) * 0.02)
+        self.coeff = nn.Parameter(torch.randn(self.num_relations, self.num_bases) * 0.02)
+        self.root = nn.Linear(in_channels, out_channels, bias=False)
+        self.bias = nn.Parameter(torch.zeros(out_channels))
+        self._cached_weights = None
+
+    def forward(self, x, edge_index, relation_ids):
+        edge_index, _ = pyg_utils.remove_self_loops(edge_index)
+        relation_ids = relation_ids.view(-1).long()
+        if relation_ids.numel() != edge_index.size(1):
+            relation_ids = relation_ids[:edge_index.size(1)]
+        self._cached_weights = torch.einsum('rb,bij->rij', self.coeff, self.bases)
+        out = self.propagate(edge_index, x=x, relation_ids=relation_ids)
+        out = out + self.root(x) + self.bias
+        self._cached_weights = None
+        return out
+
+    def message(self, x_j, relation_ids):
+        weights = self._cached_weights.index_select(0, relation_ids)
+        return torch.bmm(x_j.unsqueeze(1), weights).squeeze(1)
+
+
+class RGCNBasisGNN(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim, args):
+        super(RGCNBasisGNN, self).__init__()
+        self.dropout = args.dropout
+        self.n_layers = args.n_layers
+        self.skip = args.skip
+        self.num_relations = int(max(1, getattr(args, "num_relations", 64)))
+        self.num_bases = int(max(1, getattr(args, "num_bases", 8)))
+        self.rel_reg_lambda = float(max(0.0, getattr(args, "rel_reg_lambda", 0.0)))
+
+        if len(feature_preprocess.FEATURE_AUGMENT) > 0:
+            self.feat_preprocess = feature_preprocess.Preprocess(input_dim)
+            input_dim = self.feat_preprocess.dim_out
+        else:
+            self.feat_preprocess = None
+
+        self.pre_mp = nn.Sequential(nn.Linear(input_dim, hidden_dim))
+        self.convs = nn.ModuleList()
+
+        if args.skip == 'learnable':
+            self.learnable_skip = nn.Parameter(torch.ones(self.n_layers, self.n_layers))
+
+        for l in range(args.n_layers):
+            if args.skip == 'all' or args.skip == 'learnable':
+                hidden_input_dim = hidden_dim * (l + 1)
+            else:
+                hidden_input_dim = hidden_dim
+            self.convs.append(RGCNBasisConv(hidden_input_dim, hidden_dim,
+                self.num_relations, self.num_bases))
+
+        post_input_dim = hidden_dim * (args.n_layers + 1)
+        self.post_mp = nn.Sequential(
+            nn.Linear(post_input_dim, hidden_dim), nn.Dropout(args.dropout),
+            nn.LeakyReLU(0.1),
+            nn.Linear(hidden_dim, output_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 256), nn.ReLU(),
+            nn.Linear(256, hidden_dim))
+
+    def relation_regularization(self):
+        if self.rel_reg_lambda <= 0:
+            return torch.tensor(0.0, device=utils.get_device())
+        penalty = 0.0
+        for conv in self.convs:
+            penalty = penalty + torch.mean(conv.coeff ** 2)
+        return self.rel_reg_lambda * penalty
+
+    def forward(self, data):
+        if self.feat_preprocess is not None:
+            if not getattr(data, "preprocessed", False):
+                data = self.feat_preprocess(data)
+                data.preprocessed = True
+
+        x, edge_index, batch = data.node_feature, data.edge_index, data.batch
+        relation_ids = _extract_relation_ids(data, edge_index.size(1), self.num_relations)
+        x = self.pre_mp(x)
+
+        all_emb = x.unsqueeze(1)
+        emb = x
+        for i, conv in enumerate(self.convs):
+            if self.skip == 'learnable':
+                skip_vals = self.learnable_skip[i, :i+1].unsqueeze(0).unsqueeze(-1)
+                curr_emb = all_emb * torch.sigmoid(skip_vals)
+                curr_emb = curr_emb.view(x.size(0), -1)
+                x = conv(curr_emb, edge_index, relation_ids)
+            elif self.skip == 'all':
+                x = conv(emb, edge_index, relation_ids)
+            else:
+                x = conv(x, edge_index, relation_ids)
+            x = F.relu(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)
+            emb = torch.cat((emb, x), 1)
+            if self.skip == 'learnable':
+                all_emb = torch.cat((all_emb, x.unsqueeze(1)), 1)
+
+        emb = pyg_nn.global_add_pool(emb, batch)
+        emb = self.post_mp(emb)
+        return emb
 
 class SAGEConv(pyg_nn.MessagePassing):
     def __init__(self, in_channels, out_channels, aggr="add"):

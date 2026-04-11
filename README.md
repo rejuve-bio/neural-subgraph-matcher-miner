@@ -193,6 +193,159 @@ docker run -p 5000:5000 neural-miner
 
 ##  Usage Guide
 
+### Production Semantic Mining: Train Once, Mine Many Datasets
+
+The production semantic workflow uses a single universal semantic checkpoint.
+Users should not retrain the model for every new graph. Instead:
+
+1. Convert the graph to the miner's typed PKL format.
+2. Precompute/cache text-label embeddings for that graph's node and edge labels.
+3. Run `subgraph_mining.decoder` with the universal checkpoint.
+
+The semantic stack is:
+
+```text
+node/edge labels -> frozen MiniLM embeddings cached as .npy files
+                 -> label-id features + text-label features
+                 -> R-GCN/order-embedding miner
+                 -> typed directed motif JSON/PKL + interactive HTML
+```
+
+#### One-Time Setup: Hugging Face Token and MiniLM Cache
+
+MiniLM is downloaded from Hugging Face. Create a read-only token at
+`https://huggingface.co/settings/tokens`, then set it on the host:
+
+```bash
+export HF_TOKEN='hf_your_read_token_here'
+mkdir -p artifacts/hf_cache artifacts/label_encoder_cache_minilm_universal
+```
+
+Start the semantic utility container with a persistent HF cache:
+
+```bash
+docker run --rm -it \
+  -e HF_TOKEN="$HF_TOKEN" \
+  -e HUGGING_FACE_HUB_TOKEN="$HF_TOKEN" \
+  -e HF_HOME=/hf_cache \
+  -e SENTENCE_TRANSFORMERS_HOME=/hf_cache/sentence_transformers \
+  -v "$PWD:/app" \
+  -v "$PWD/artifacts/hf_cache:/hf_cache" \
+  -w /app \
+  --name spminer-semantic \
+  --entrypoint /bin/bash \
+  spminer-semantic:latest
+```
+
+Inside the container, verify MiniLM:
+
+```bash
+python - <<'PY'
+from sentence_transformers import SentenceTransformer
+
+model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+print("MINILM_OK")
+print("dim:", model.get_sentence_embedding_dimension())
+PY
+```
+
+#### Precompute Label Embeddings
+
+Run this before training the universal hybrid model, and run it again for each
+new user dataset. The second command verifies that mining/training can run in
+`cache_only` mode without contacting Hugging Face.
+
+```bash
+python scripts/precompute_label_cache.py \
+  --semantic_preset universal,biology,ecommerce,social \
+  --graph_pkl path/to/typed_dataset.pkl \
+  --cache_dir artifacts/label_encoder_cache_minilm_universal \
+  --backend sentence_transformers \
+  --label_encoder_name sentence-transformers/all-MiniLM-L6-v2
+
+python scripts/precompute_label_cache.py \
+  --semantic_preset universal,biology,ecommerce,social \
+  --graph_pkl path/to/typed_dataset.pkl \
+  --cache_dir artifacts/label_encoder_cache_minilm_universal \
+  --backend cache_only
+```
+
+For a new dataset, the cache must cover that dataset's labels.Should either:
+
+1. recompute/update the cache from the new typed PKL, or
+2. extract a compatible precomputed cache that already contains those labels.
+
+#### Train the Universal Semantic Checkpoint
+
+This is a maintainer step. Do it once, then reuse the checkpoint for mining.
+
+```bash
+python -m subgraph_matching.train \
+  --dataset syn-semantic \
+  --semantic_preset mixed \
+  --semantic_mix_presets universal,biology,ecommerce,social \
+  --semantic_mix_weights 0.55,0.15,0.15,0.15 \
+  --semantic_mode hybrid_text \
+  --label_encoder_backend cache_only \
+  --label_encoder_cache_dir artifacts/label_encoder_cache_minilm_universal \
+  --label_encoder_name sentence-transformers/all-MiniLM-L6-v2 \
+  --text_encoder_dim 384 \
+  --text_label_dim 64 \
+  --use_label_features \
+  --label_feature_dim 16 \
+  --encoder_type rgcn_basis \
+  --num_relations 64 \
+  --num_bases 8 \
+  --rel_reg_lambda 1e-4 \
+  --label_neg_ratio 0.5 \
+  --hard_negative_ratio 0.5 \
+  --label_noise 0.10 \
+  --batch_size 16 \
+  --n_batches 10000 \
+  --eval_interval 500 \
+  --val_size 512 \
+  --n_workers 1 \
+  --order_threshold_mode margin \
+  --order_margin_factor 0.5 \
+  --model_path ckpt/universal/model_universal_hybrid_minilm_rgcn.pt
+```
+
+#### Mine a Real Typed PKL with the Universal Semantic Checkpoint
+
+```bash
+python -m subgraph_mining.decoder \
+  --dataset path/to/typed_dataset.pkl \
+  --graph_type directed \
+  --model_path ckpt/universal/model_universal_hybrid_minilm_rgcn.pt \
+  --vocab_dir artifacts/vocab_my_dataset \
+  --n_trials 1000 \
+  --n_neighborhoods 10000 \
+  --min_pattern_size 3 \
+  --max_pattern_size 8 \
+  --min_neighborhood_size 20 \
+  --max_neighborhood_size 29 \
+  --search_strategy greedy \
+  --memory_efficient \
+  --out_batch_size 3 \
+  --streaming_workers 0 \
+  --out_path results/my_dataset_semantic_patterns.pkl
+```
+
+The checkpoint metadata automatically restores the semantic model settings
+(`hybrid_text`, `cache_only`, R-GCN configuration, and label-cache directory).
+
+#### Structural-Only Mining
+
+Use the structural checkpoint when label semantics should be ignored:
+
+```bash
+python -m subgraph_mining.decoder \
+  --dataset path/to/graph.pkl \
+  --graph_type directed \
+  --model_path ckpt/phase5/structural_baseline.pt \
+  --out_path results/structural_patterns.pkl
+```
+
 ### 1. Neural Subgraph Matching
 
 #### Train the Encoder

@@ -18,6 +18,7 @@ import torch_geometric.nn as pyg_nn
 from matplotlib import cm
 
 from common import data
+from common import feature_preprocess
 from common import models
 from common import utils
 from common import combined_syn
@@ -265,6 +266,38 @@ worker_graphs = None
 worker_embs = None
 worker_args = None
 
+def _configure_worker_runtime(args):
+    use_label_features = (
+        getattr(args, "use_label_features", False)
+        or getattr(args, "semantic_mode", "categorical") == "hybrid_text"
+    )
+    feature_preprocess.configure_feature_augment(
+        include_label_id=use_label_features,
+        label_feature_dim=getattr(args, "label_feature_dim", 16),
+        semantic_mode=getattr(args, "semantic_mode", "categorical"),
+        label_encoder_backend=getattr(args, "label_encoder_backend", "auto"),
+        label_encoder_name=getattr(
+            args, "label_encoder_name", "sentence-transformers/all-MiniLM-L6-v2"
+        ),
+        label_encoder_cache_dir=getattr(
+            args, "label_encoder_cache_dir", "artifacts/label_encoder_cache"
+        ),
+        text_encoder_dim=getattr(args, "text_encoder_dim", 384),
+        text_label_dim=getattr(args, "text_label_dim", 64),
+    )
+    if hasattr(utils, "configure_semantic_hash"):
+        utils.configure_semantic_hash(
+            semantic_mode=getattr(args, "semantic_mode", "categorical"),
+            label_encoder_backend=getattr(args, "label_encoder_backend", "auto"),
+            label_encoder_name=getattr(
+                args, "label_encoder_name", "sentence-transformers/all-MiniLM-L6-v2"
+            ),
+            label_encoder_cache_dir=getattr(
+                args, "label_encoder_cache_dir", "artifacts/label_encoder_cache"
+            ),
+            text_encoder_dim=getattr(args, "text_encoder_dim", 384),
+        )
+
 def init_greedy_worker(model, graphs, embs, args):
     """
     Initializer function for each worker process in the pool.
@@ -272,6 +305,7 @@ def init_greedy_worker(model, graphs, embs, args):
     """
     global worker_model, worker_graphs, worker_embs, worker_args
     print(f"[{time.strftime('%H:%M:%S')}] Worker PID {os.getpid()} initializing...", flush=True)
+    _configure_worker_runtime(args)
     worker_model = model
     worker_graphs = graphs
     worker_embs = embs
@@ -286,8 +320,9 @@ def run_greedy_trial(trial_idx):
     """
     global worker_model, worker_graphs, worker_embs, worker_args
     
-    random.seed(int.from_bytes(os.urandom(4), 'little') + trial_idx)
-    np.random.seed(int.from_bytes(os.urandom(4), 'little') + trial_idx)
+    base_seed = int(getattr(worker_args, "seed", 42))
+    random.seed(base_seed + int(trial_idx))
+    np.random.seed(base_seed + int(trial_idx))
 
     ps = np.array([len(g) for g in worker_graphs], dtype=np.float32)
     ps /= np.sum(ps)
@@ -469,11 +504,11 @@ class GreedySearchAgent(SearchAgent):
 class MemoryEfficientGreedyAgent(GreedySearchAgent):
     def __init__(self, min_pattern_size, max_pattern_size, model, dataset,
         embs, node_anchored=False, analyze=False, rank_method="counts",
-        model_type="order", out_batch_size=20, batch_size=64):
+        model_type="order", out_batch_size=20, batch_size=64, n_workers=4):
         super().__init__(min_pattern_size, max_pattern_size, model, dataset,
             embs, node_anchored=node_anchored, analyze=analyze,
             rank_method=rank_method, model_type=model_type,
-            out_batch_size=out_batch_size)
+            out_batch_size=out_batch_size, n_workers=n_workers)
         self.batch_size = batch_size
         self.use_fp16 = torch.cuda.is_available()
         

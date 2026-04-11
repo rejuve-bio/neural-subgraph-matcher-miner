@@ -1,4 +1,7 @@
 from collections import defaultdict, Counter
+import json
+import hashlib
+import os
 
 from deepsnap.graph import Graph as DSGraph
 from deepsnap.batch import Batch
@@ -15,6 +18,154 @@ from tqdm import tqdm
 import warnings
 
 from common import feature_preprocess
+from common import label_encoder
+
+_node_label_vocab = None
+_edge_type_vocab = None
+_vocab_version = None
+MODEL_METADATA_VERSION = "v1"
+_semantic_hash_mode = "categorical"
+_semantic_hash_label_encoder = None
+_semantic_hash_top_k = 4
+_semantic_hash_cache = {}
+
+
+def set_label_vocabs(node_vocab=None, edge_vocab=None, vocab_version=None):
+    global _node_label_vocab, _edge_type_vocab, _vocab_version
+    _node_label_vocab = node_vocab
+    _edge_type_vocab = edge_vocab
+    _vocab_version = vocab_version
+
+
+def configure_semantic_hash(
+    semantic_mode="categorical",
+    label_encoder_backend="auto",
+    label_encoder_name="sentence-transformers/all-MiniLM-L6-v2",
+    label_encoder_cache_dir=None,
+    text_encoder_dim=384,
+    text_hash_top_k=4,
+):
+    global _semantic_hash_mode, _semantic_hash_label_encoder
+    global _semantic_hash_top_k, _semantic_hash_cache
+
+    _semantic_hash_mode = semantic_mode or "categorical"
+    _semantic_hash_top_k = max(1, int(text_hash_top_k))
+    _semantic_hash_cache = {}
+
+    if _semantic_hash_mode == "hybrid_text":
+        _semantic_hash_label_encoder = label_encoder.UniversalLabelEncoder(
+            model_name=label_encoder_name,
+            cache_dir=label_encoder_cache_dir,
+            backend=label_encoder_backend,
+            embedding_dim=text_encoder_dim,
+        )
+    else:
+        _semantic_hash_label_encoder = None
+
+
+def build_model_metadata(args):
+    keys = [
+        "dataset",
+        "semantic_preset",
+        "semantic_mix_presets",
+        "semantic_mix_weights",
+        "val_semantic_preset",
+        "semantic_mode",
+        "use_label_features",
+        "label_feature_dim",
+        "label_encoder_backend",
+        "label_encoder_name",
+        "label_encoder_cache_dir",
+        "text_encoder_dim",
+        "text_label_dim",
+        "encoder_type",
+        "num_relations",
+        "num_bases",
+        "rel_reg_lambda",
+        "conv_type",
+        "hidden_dim",
+        "n_layers",
+        "skip",
+        "dropout",
+        "node_anchored",
+        "margin",
+        "order_threshold_mode",
+        "order_margin_factor",
+        "seed",
+    ]
+    meta = {"metadata_version": MODEL_METADATA_VERSION}
+    for key in keys:
+        if hasattr(args, key):
+            meta[key] = getattr(args, key)
+    if hasattr(args, "vocab_version"):
+        meta["vocab_version"] = getattr(args, "vocab_version")
+    return meta
+
+
+def model_metadata_path(model_path):
+    return model_path + ".meta.json"
+
+
+def save_model_metadata(args, model_path):
+    meta_path = model_metadata_path(model_path)
+    meta_dir = os.path.dirname(meta_path)
+    if meta_dir and not os.path.exists(meta_dir):
+        os.makedirs(meta_dir)
+    with open(meta_path, "w") as f:
+        json.dump(build_model_metadata(args), f, indent=2, sort_keys=True)
+
+
+def load_model_metadata(model_path, required=False):
+    meta_path = model_metadata_path(model_path)
+    if not os.path.exists(meta_path):
+        if required:
+            raise FileNotFoundError("Missing model metadata: {}".format(meta_path))
+        return None
+    with open(meta_path, "r") as f:
+        return json.load(f)
+
+
+def apply_model_metadata_to_args(args, parser=None, keys=None, strict_conflicts=True):
+    if not getattr(args, "model_path", None):
+        return None, {}, {}
+
+    metadata = load_model_metadata(args.model_path, required=False)
+    if not metadata:
+        return None, {}, {}
+
+    candidate_keys = keys or [k for k in metadata.keys() if hasattr(args, k)]
+    applied = {}
+    conflicts = {}
+
+    for key in candidate_keys:
+        if key not in metadata or not hasattr(args, key):
+            continue
+        meta_value = metadata[key]
+        current_value = getattr(args, key)
+        default_value = parser.get_default(key) if parser is not None else None
+
+        if current_value == meta_value:
+            continue
+
+        if parser is not None and current_value == default_value:
+            setattr(args, key, meta_value)
+            applied[key] = meta_value
+        else:
+            conflicts[key] = {
+                "runtime": current_value,
+                "checkpoint": meta_value,
+            }
+
+    if conflicts and strict_conflicts:
+        lines = ["Model metadata conflicts with runtime args:"]
+        for key, values in sorted(conflicts.items()):
+            lines.append(
+                "  {}: runtime={} checkpoint={}".format(
+                    key, values["runtime"], values["checkpoint"])
+            )
+        raise ValueError("\n".join(lines))
+
+    return metadata, applied, conflicts
 
 
 def sample_neigh(graphs, size, graph_type):
@@ -58,21 +209,144 @@ def vec_hash(v):
     #v = [np.sum(v) for mask in cached_masks]
     return v
 
+
+def node_semantic_label(node_data):
+    if node_data is None:
+        return None
+    if "semantic_label" in node_data:
+        return node_data.get("semantic_label")
+    return node_data.get("label", None)
+
+
+def edge_semantic_label(edge_data):
+    if edge_data is None:
+        return None
+    for key in ("type_str", "type", "relation", "edge_type", "label", "input_label"):
+        value = edge_data.get(key)
+        if value is not None:
+            return value
+    return None
+
+
+def _text_bucket_signature(text):
+    if _semantic_hash_label_encoder is None:
+        return ()
+    label_text = label_encoder._safe_label_text(text)
+    cached = _semantic_hash_cache.get(label_text)
+    if cached is not None:
+        return cached
+
+    vec = _semantic_hash_label_encoder.encode_many([text])[0].detach().cpu().numpy()
+    if vec.size == 0:
+        sig = ()
+    else:
+        k = min(_semantic_hash_top_k, vec.shape[0])
+        if k <= 0:
+            sig = ()
+        else:
+            order = np.argsort(np.abs(vec))[-k:]
+            order = sorted(order.tolist(), key=lambda idx: (-abs(float(vec[idx])), int(idx)))
+            sig = tuple((int(idx) << 1) | (1 if float(vec[idx]) >= 0 else 0) for idx in order)
+    _semantic_hash_cache[label_text] = sig
+    return sig
+
+
+def _text_bucket_id(text):
+    if _semantic_hash_mode != "hybrid_text":
+        return 0
+    sig = _text_bucket_signature(text)
+    if not sig:
+        return 0
+    return _stable_int("textsig::{}".format(",".join(map(str, sig))))
+
+
+def _node_semantic_mix(node_data):
+    label_id = int(node_data.get("label_id", _stable_label_id(node_semantic_label(node_data))))
+    base = (label_id << 1)
+    if _semantic_hash_mode == "hybrid_text":
+        text_bucket_id = int(node_data.get(
+            "text_label_bucket_id",
+            _text_bucket_id(node_semantic_label(node_data)),
+        ))
+        base ^= ((text_bucket_id << 3) | (text_bucket_id >> 2))
+    return base
+
 def wl_hash(g, dim=64, node_anchored=False):
     g = nx.convert_node_labels_to_integers(g)
     vecs = np.zeros((len(g), dim), dtype=int)
-    if node_anchored:
-        for v in g.nodes:
-            if g.nodes[v]["anchor"] == 1:
-                vecs[v] = 1
-                break
+    for v in g.nodes:
+        node_data = g.nodes[v]
+        base = 0
+        if node_anchored and node_data.get("anchor", 0) == 1:
+            base ^= 1
+
+        base ^= _node_semantic_mix(node_data)
+        vecs[v] = base
     for i in range(len(g)):
         newvecs = np.zeros((len(g), dim), dtype=int)
         for n in g.nodes:
-            newvecs[n] = vec_hash(np.sum(vecs[list(g.neighbors(n)) + [n]],
-                axis=0))
+            # Direction-aware neighborhood aggregation for semantic hashing
+            neigh_vec = vecs[n].copy()
+            if g.is_directed():
+                succ_nodes = list(g.successors(n))
+                pred_nodes = list(g.predecessors(n))
+                if succ_nodes:
+                    neigh_vec += np.sum(vecs[succ_nodes], axis=0)
+                if pred_nodes:
+                    neigh_vec += 3 * np.sum(vecs[pred_nodes], axis=0)
+                edge_sem = 0
+                for nbr in succ_nodes:
+                    edge_sem ^= _edge_semantic_mix(g.get_edge_data(n, nbr), forward=True)
+                for nbr in pred_nodes:
+                    edge_sem ^= _edge_semantic_mix(g.get_edge_data(n, nbr), forward=False)
+                neigh_vec[0] ^= edge_sem
+            else:
+                neighbors = list(g.neighbors(n))
+                if neighbors:
+                    neigh_vec += np.sum(vecs[neighbors], axis=0)
+                edge_sem = 0
+                for nbr in neighbors:
+                    edge_sem ^= _edge_semantic_mix(g.get_edge_data(n, nbr), forward=True)
+                neigh_vec[0] ^= edge_sem
+            newvecs[n] = vec_hash(neigh_vec)
         vecs = newvecs
     return tuple(np.sum(vecs, axis=0))
+
+
+def _stable_int(text, max_value=2**31 - 1):
+    """Deterministic integer id from text (stable across runs/processes)."""
+    digest = hashlib.blake2b(str(text).encode("utf-8"), digest_size=8).digest()
+    value = int.from_bytes(digest, byteorder="big", signed=False)
+    return value % max_value
+
+
+def _stable_label_id(label):
+    if _node_label_vocab is not None:
+        return int(_node_label_vocab.get(str(label), _node_label_vocab.get("UNK", 0)))
+    if label is None:
+        return 0
+    return _stable_int(f"node::{label}") + 1
+
+
+def _stable_edge_type_id(edge_type):
+    if _edge_type_vocab is not None:
+        return int(_edge_type_vocab.get(str(edge_type), _edge_type_vocab.get("UNK", 0)))
+    if edge_type is None:
+        return 0
+    return _stable_int(f"edge::{edge_type}") + 1
+
+
+def _edge_semantic_mix(edge_data, forward):
+    edge_data = edge_data or {}
+    if "type_id" in edge_data:
+        edge_type_id = int(edge_data["type_id"])
+    else:
+        edge_type = edge_semantic_label(edge_data) or "unknown"
+        edge_type_id = _stable_edge_type_id(edge_type)
+    if _semantic_hash_mode == "hybrid_text":
+        edge_type_id ^= _text_bucket_id(edge_semantic_label(edge_data))
+    direction_bias = 11 if forward else 19
+    return (edge_type_id * 1315423911) ^ direction_bias
 
 def gen_baseline_queries_rand_esu(queries, targets, node_anchored=False):
     sizes = Counter([len(g) for g in queries])
@@ -237,18 +511,31 @@ def standardize_graph(graph: nx.Graph, anchor: int = None) -> nx.Graph:
     else:
         g = nx.Graph()
 
-    g.add_nodes_from(graph.nodes())
-    g.add_edges_from(graph.edges())
+    g.add_nodes_from((n, dict(attrs)) for n, attrs in graph.nodes(data=True))
+    g.add_edges_from((u, v, dict(attrs)) for u, v, attrs in graph.edges(data=True))
    # g = graph.copy()
     
     # Standardize edge attributes
     for u, v in g.edges():
         edge_data = g.edges[u, v]
+        edge_type_raw = edge_semantic_label(edge_data) or "unknown"
+        edge_type_id_raw = edge_data.get("type_id")
 
         # Remove invalid keys
         bad_keys = [k for k in list(edge_data.keys()) if not isinstance(k, str) or k.strip() == "" or isinstance(k, dict)]
         for k in bad_keys:
             del edge_data[k]
+
+        # DeepSNAP compatibility: keep only numeric/scalar edge attributes.
+        # Any string/object attrs can trigger "Unknown type of key {} in edge attributes."
+        for k in list(edge_data.keys()):
+            v_attr = edge_data[k]
+            if isinstance(v_attr, bool):
+                edge_data[k] = float(v_attr)
+            elif isinstance(v_attr, (int, float, np.integer, np.floating)):
+                edge_data[k] = float(v_attr)
+            else:
+                del edge_data[k]
 
         # Clean empty edge attributes if any
         if len(edge_data) == 0:
@@ -262,10 +549,14 @@ def standardize_graph(graph: nx.Graph, anchor: int = None) -> nx.Graph:
             except (ValueError, TypeError):
                 edge_data['weight'] = 1.0
         
-        # Handle edge type
-        if 'type' in edge_data:
-            edge_data['type_str'] = str(edge_data['type'])
-            edge_data['type'] = float(hash(str(edge_data['type'])) % 1000)
+        # Deterministic edge-type normalization for semantic mining. Capture the
+        # string relation before DeepSNAP-compatible sanitization deletes strings.
+        if edge_type_id_raw is not None:
+            edge_type_id = int(edge_type_id_raw)
+        else:
+            edge_type_id = int(_stable_edge_type_id(edge_type_raw))
+        edge_data['type_id'] = edge_type_id
+        edge_data['type'] = float(edge_type_id)
     
     # Standardize node attributes
     for node in g.nodes():
@@ -278,9 +569,13 @@ def standardize_graph(graph: nx.Graph, anchor: int = None) -> nx.Graph:
             # Default feature if no anchor specified
             node_data['node_feature'] = torch.tensor([1.0])
             
-        # Ensure label exists
+        semantic_label = node_semantic_label(node_data)
         if 'label' not in node_data:
             node_data['label'] = str(node)
+        node_data['semantic_label'] = semantic_label
+        node_data['label_id'] = int(_stable_label_id(semantic_label))
+        if _semantic_hash_mode == "hybrid_text":
+            node_data['text_label_bucket_id'] = int(_text_bucket_id(semantic_label))
             
         # Ensure id exists
         if 'id' not in node_data:
