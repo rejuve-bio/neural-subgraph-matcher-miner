@@ -2,7 +2,9 @@ name: Run Decoder
 
 on:
   push:
+    branches: [main, feature/node-labelling-R-GCN]
   pull_request:
+    branches: [main, feature/node-labelling-R-GCN]
   workflow_dispatch:
 
 jobs:
