@@ -2,9 +2,9 @@ name: Run Decoder
 
 on:
   push:
-    branches: [main , test/visualizer-refactor]
+    branches: [main]
   pull_request:
-    branches: [main , test/visualizer-refactor]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -42,8 +42,18 @@ jobs:
         run: |
           mkdir -p ${{ github.workspace }}/plots/cluster
           mkdir -p ${{ github.workspace }}/results
+          mkdir -p ${{ github.workspace }}/artifacts/hf_cache
+          mkdir -p ${{ github.workspace }}/artifacts/label_encoder_cache_minilm_universal
           chmod -R 777 ${{ github.workspace }}/plots
           chmod -R 777 ${{ github.workspace }}/results
+          chmod -R 777 ${{ github.workspace }}/artifacts
+      - name: Verify workflow inputs
+        run: |
+          test -f ${{ github.workspace }}/metta.pkl
+      - name: Verify semantic checkpoint files
+        run: |
+          test -f ${{ github.workspace }}/ckpt/universal/model_universal_hybrid_minilm_rgcn.pt
+          test -f ${{ github.workspace }}/ckpt/universal/model_universal_hybrid_minilm_rgcn.pt.meta.json
       - name: Check available processors and usage percentage
         id: cpu-check
         run: |
@@ -56,24 +66,56 @@ jobs:
           echo "total_cpus=$TOTAL_CPUS" >> $GITHUB_OUTPUT
           echo "percent_used=$PERCENT_USED" >> $GITHUB_OUTPUT
 
-      - name: Run decoder in Docker container
+      - name: Run semantic decoder in Docker container
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/app \
             -e PYTHONUNBUFFERED=1 \
+            -e HF_TOKEN=${{ secrets.HF_TOKEN }} \
+            -e HUGGING_FACE_HUB_TOKEN=${{ secrets.HF_TOKEN }} \
+            -e HF_HOME=/app/artifacts/hf_cache \
+            -e SENTENCE_TRANSFORMERS_HOME=/app/artifacts/hf_cache/sentence_transformers \
             decoder-image:latest \
             bash -c "
-              set -e
-              echo 'Starting decoder run...'
+              set -euo pipefail
+              echo 'Preparing MiniLM semantic label cache for metta.pkl...'
+              python scripts/precompute_label_cache.py \
+                --graph_pkl metta.pkl \
+                --cache_dir /app/artifacts/label_encoder_cache_minilm_universal \
+                --backend sentence_transformers \
+                --label_encoder_name sentence-transformers/all-MiniLM-L6-v2 \
+                --batch_size 128
+
+              echo 'Verifying cache-only semantic path...'
+              python scripts/precompute_label_cache.py \
+                --graph_pkl metta.pkl \
+                --cache_dir /app/artifacts/label_encoder_cache_minilm_universal \
+                --backend cache_only \
+                --label_encoder_name sentence-transformers/all-MiniLM-L6-v2 \
+                --batch_size 128
+
+              echo 'Starting semantic decoder run on metta.pkl...'
               python -m subgraph_mining.decoder \
                 --dataset=metta.pkl \
-                --n_trials=200 \
-                --node_anchored \
-                --out_path=/app/results/patterns.pkl \
-                
-
+                --graph_type=directed \
+                --model_path=/app/ckpt/universal/model_universal_hybrid_minilm_rgcn.pt \
+                --vocab_dir=/app/artifacts/vocab_ci_semantic \
+                --n_trials=20 \
+                --n_neighborhoods=25 \
+                --min_pattern_size=3 \
+                --max_pattern_size=4 \
+                --min_neighborhood_size=3 \
+                --max_neighborhood_size=6 \
+                --search_strategy=greedy \
+                --memory_efficient \
+                --out_batch_size=2 \
+                --streaming_workers=0 \
+                --out_path=/app/results/semantic_patterns.pkl \
+                2>&1 | tee /app/semantic_decoder.log
 
               echo 'Checking output directories...'
+              test -f /app/results/semantic_patterns.pkl
+              test -f /app/results/semantic_patterns.json
               ls -la /app/plots/cluster
               ls -la /app/results
               "
