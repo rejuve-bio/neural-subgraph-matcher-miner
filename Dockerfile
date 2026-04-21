@@ -1,5 +1,5 @@
 # Use an official Python 3.7 base image (Debian-based)
-FROM python:3.7-slim
+FROM python:3.14-slim
 
 # Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
