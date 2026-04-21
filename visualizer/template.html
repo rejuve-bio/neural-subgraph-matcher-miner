@@ -712,7 +712,10 @@
                         ctx.restore();
 
                         if (showLabels.value && !isDimmed) {
-                            drawLabelBox(`label: ${n.label || 'Node'}`, n.x, n.y, 12, true);
+                            const lines = Object.entries(n)
+                                .filter(([k]) => !['x','y','anchor','display_label'].includes(k))
+                                .map(([k,v]) => `${k}: ${v}`);
+                            drawLabelBox(lines, n.x, n.y, 12, true);
                         }
                     });
                     ctx.restore();
@@ -720,27 +723,31 @@
 
                 const drawLabelBox = (text, x, y, fontSize, isNode) => {
                     ctx.save();
-                    ctx.globalAlpha = 1.0; // Ensure opacity
+                    ctx.globalAlpha = 1.0;
                     ctx.font = `${fontSize}px Inter, sans-serif`;
-                    const metrics = ctx.measureText(text);
-                    const w = metrics.width;
-                    const h = fontSize;
+                    const lines = Array.isArray(text) ? text : [text];
+                    const lineHeight = fontSize + 4;
+                    const w = Math.max(...lines.map(l => ctx.measureText(l).width));
+                    const h = lines.length * lineHeight;
                     const p = 4;
-                    
+
                     // PURE WHITE BACKGROUND
-                    ctx.fillStyle = '#FFFFFF'; 
+                    ctx.fillStyle = '#FFFFFF';
                     ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)';
                     ctx.lineWidth = 1;
                     ctx.beginPath();
                     ctx.roundRect(x - w/2 - p, y - h/2 - p, w + p*2, h + p*2, 4);
                     ctx.fill();
                     ctx.stroke();
-                    
+
                     // Black Text
                     ctx.fillStyle = '#000000';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
-                    ctx.fillText(text, x, y + 1);
+                    const startY = y - (h / 2) + (lineHeight / 2);
+                    lines.forEach((line, i) => {
+                        ctx.fillText(line, x, startY + i * lineHeight);
+                    });
                     ctx.restore();
                 };
 

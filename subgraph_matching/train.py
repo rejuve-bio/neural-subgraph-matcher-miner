@@ -13,6 +13,7 @@ from queue import PriorityQueue
 import os
 import random
 import time
+import copy
 
 from deepsnap.batch import Batch
 import networkx as nx
@@ -30,6 +31,7 @@ import torch_geometric.utils as pyg_utils
 import torch_geometric.nn as pyg_nn
 
 from common import data
+from common import feature_preprocess
 from common import models
 from common import utils
 if HYPERPARAM_SEARCH:
@@ -38,6 +40,31 @@ if HYPERPARAM_SEARCH:
 else:
     from subgraph_matching.config import parse_encoder
 from subgraph_matching.test import validation
+
+def _configure_runtime_features(args):
+    use_label_features = (args.use_label_features or
+        args.dataset.startswith("syn-semantic") or
+        getattr(args, "semantic_mode", "categorical") == "hybrid_text")
+    feature_preprocess.configure_feature_augment(
+        include_label_id=use_label_features,
+        label_feature_dim=args.label_feature_dim,
+        semantic_mode=getattr(args, "semantic_mode", "categorical"),
+        label_encoder_backend=getattr(args, "label_encoder_backend", "auto"),
+        label_encoder_name=getattr(args, "label_encoder_name",
+            "sentence-transformers/all-MiniLM-L6-v2"),
+        label_encoder_cache_dir=getattr(args, "label_encoder_cache_dir",
+            "artifacts/label_encoder_cache"),
+        text_encoder_dim=getattr(args, "text_encoder_dim", 384),
+        text_label_dim=getattr(args, "text_label_dim", 64))
+    utils.configure_semantic_hash(
+        semantic_mode=getattr(args, "semantic_mode", "categorical"),
+        label_encoder_backend=getattr(args, "label_encoder_backend", "auto"),
+        label_encoder_name=getattr(args, "label_encoder_name",
+            "sentence-transformers/all-MiniLM-L6-v2"),
+        label_encoder_cache_dir=getattr(args, "label_encoder_cache_dir",
+            "artifacts/label_encoder_cache"),
+        text_encoder_dim=getattr(args, "text_encoder_dim", 384),
+    )
 
 def build_model(args):
     # build model
@@ -57,6 +84,16 @@ def make_data_source(args):
         if len(toks) == 1 or toks[1] == "balanced":
             data_source = data.OTFSynDataSource(
                 node_anchored=args.node_anchored)
+        elif toks[1] == "semantic":
+            data_source = data.OTFSemanticSynDataSource(
+                node_anchored=args.node_anchored,
+                semantic_preset=args.semantic_preset,
+                label_neg_ratio=args.label_neg_ratio,
+                label_noise=args.label_noise,
+                hard_negative_ratio=args.hard_negative_ratio,
+                seed=args.seed,
+                semantic_mix_presets=args.semantic_mix_presets,
+                semantic_mix_weights=args.semantic_mix_weights)
         elif toks[1] == "imbalanced":
             data_source = data.OTFSynImbalancedDataSource(
                 node_anchored=args.node_anchored)
@@ -89,6 +126,7 @@ def train(args, model,in_queue, out_queue):
     in_queue: input queue to an intersection computation worker
     out_queue: output queue to an intersection computation worker
     """
+    _configure_runtime_features(args)
     scheduler, opt = utils.build_optimizer(args, model.parameters())
     if args.method_type == "order":
         clf_opt = optim.Adam(model.clf_model.parameters(), lr=args.lr)
@@ -165,12 +203,17 @@ def train_loop(args):
     else:
         clf_opt = None
 
-    data_source = make_data_source(args)
-    loaders = data_source.gen_data_loaders(args.val_size, args.batch_size,
+    train_data_source = make_data_source(args)
+    val_args = args
+    if args.dataset.startswith("syn-semantic") and args.val_semantic_preset:
+        val_args = copy.copy(args)
+        val_args.semantic_preset = args.val_semantic_preset
+    val_data_source = make_data_source(val_args)
+    loaders = val_data_source.gen_data_loaders(args.val_size, args.batch_size,
         train=False, use_distributed_sampling=False)
     test_pts = []
     for batch_target, batch_neg_target, batch_neg_query in zip(*loaders):
-        pos_a, pos_b, neg_a, neg_b = data_source.gen_batch(batch_target,
+        pos_a, pos_b, neg_a, neg_b = val_data_source.gen_batch(batch_target,
             batch_neg_target, batch_neg_query, False)
         if pos_a:
             pos_a = pos_a.to(torch.device("cpu"))
@@ -218,6 +261,14 @@ def main(force_test=False):
     utils.parse_optimizer(parser)
     parse_encoder(parser)
     args = parser.parse_args()
+
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
+
+    _configure_runtime_features(args)
 
     if force_test:
         args.test = True

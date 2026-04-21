@@ -9,7 +9,15 @@ plots/
 data/
 runs/
 results/
+logs/
+artifacts/hf_cache/
+artifacts/label_encoder_cache*/
 *.sw?
 orca/
 core
 deepsnap-experimental/
+*.md
+\scripts
+!scripts/
+!scripts/*.py
+scripts/convert_hetionet_json_to_pkl.py

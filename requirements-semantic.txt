@@ -1,0 +1,5 @@
+sentence-transformers==5.2.0
+networkx==3.3
+numpy<2.3
+tqdm==4.66.5
+requests>=2.31,<3

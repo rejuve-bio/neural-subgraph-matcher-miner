@@ -27,8 +27,10 @@ import torch_geometric.nn as pyg_nn
 from matplotlib import cm
 
 from common import data
+from common import feature_preprocess
 from common import models
 from common import utils
+from common import label_vocab
 from common import combined_syn
 from subgraph_mining.config import parse_decoder
 from subgraph_matching.config import parse_encoder
@@ -96,7 +98,7 @@ def extract_neighborhood(dataset_graph, seed, args, is_directed):
         nodes_in_bubble.append(curr)
 
         if dist < args.radius:
-            neighbors = dataset_graph.successors(curr) if is_directed else dataset_graph.neighbors(curr)
+            neighbors = (set(dataset_graph.successors(curr)) | set(dataset_graph.predecessors(curr))) if is_directed else dataset_graph.neighbors(curr)
             for neighbor in neighbors:
                 if neighbor not in visited:
                     visited.add(neighbor)
@@ -200,19 +202,19 @@ def generate_target_embeddings(dataset, model, args):
     logger.info(f"Setting up Batch Processing Pipeline (Batch Size: {args.batch_size})")
 
     # Reproducibility
-    random.seed(42)
-    np.random.seed(42)
+    random.seed(args.seed)
+    np.random.seed(args.seed)
 
     dataset_graph = dataset[0] 
     
     # select seeds from the FULL graph first to ensure we start exactly where intended.
-    all_nodes = sorted(list(dataset_graph.nodes()))
+    all_nodes = sorted(list(dataset_graph.nodes()), key=str)
     
     # Filter out "dead seeds" (isolated nodes) that cannot contain patterns
     # This prevents DeepSnap from crashing on 0-edge subgraphs
     is_directed = (args.graph_type == "directed")
     if is_directed:
-        all_nodes = [n for n in all_nodes if dataset_graph.out_degree(n) > 0]
+        all_nodes = [n for n in all_nodes if dataset_graph.out_degree(n) > 0 or dataset_graph.in_degree(n) > 0]
     else:
         all_nodes = [n for n in all_nodes if dataset_graph.degree(n) > 0]
         
@@ -399,7 +401,12 @@ def pattern_growth_streaming(dataset, task, args):
             pat_anchor = 0 if args.node_anchored else None
             std_pat = utils.standardize_graph(pattern, anchor=pat_anchor)
             ds_pat = DSGraph(std_pat)
-            batch_pat = Batch.from_data_list([ds_pat]).to(utils.get_device())
+            batch_pat = Batch.from_data_list([ds_pat])
+            augmenter = feature_preprocess.FeatureAugment()
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore', message='Unknown type of key*')
+                batch_pat = augmenter.augment(batch_pat)
+            batch_pat = batch_pat.to(utils.get_device())
             
             with torch.no_grad():
                 pat_emb = model.emb_model(batch_pat) # (1, D)
@@ -822,6 +829,52 @@ def update_run_index(json_path, args):
     # Save updated index  
     with open(index_file, 'w') as f:  
         json.dump(index, f, indent=2)
+
+
+def _semantic_node_match(n1, n2):
+    return (
+        int(n1.get("anchor", 0)) == int(n2.get("anchor", 0))
+        and int(n1.get("label_id", 0)) == int(n2.get("label_id", 0))
+        and str(utils.node_semantic_label(n1)) == str(utils.node_semantic_label(n2))
+    )
+
+
+def _semantic_edge_match(e1, e2):
+    return (
+        int(e1.get("type_id", 0)) == int(e2.get("type_id", 0))
+        and str(utils.edge_semantic_label(e1))
+        == str(utils.edge_semantic_label(e2))
+    )
+
+
+def _semantic_isomorphic(g1, g2):
+    if g1.is_directed() != g2.is_directed():
+        return False
+    graph_matcher = (
+        nx.algorithms.isomorphism.DiGraphMatcher
+        if g1.is_directed()
+        else nx.algorithms.isomorphism.GraphMatcher
+    )
+    return graph_matcher(
+        g1, g2, node_match=_semantic_node_match, edge_match=_semantic_edge_match
+    ).is_isomorphic()
+
+
+def _split_by_semantic_isomorphism(instances):
+    """Split a hash bucket into exact semantic isomorphism groups."""
+    groups = []
+    for inst in instances:
+        placed = False
+        for group in groups:
+            if _semantic_isomorphic(inst, group[0]):
+                group.append(inst)
+                placed = True
+                break
+        if not placed:
+            groups.append([inst])
+    return groups
+
+
 def save_and_visualize_all_instances(agent, args):
     try:
         # Clear plots/cluster so only this run's output is present (no leftover from previous run)
@@ -907,15 +960,22 @@ def save_and_visualize_all_instances(agent, args):
                 logger.debug(f"No patterns found for size {size}")
                 continue
             
+            grouped_patterns = []
+            for wl_hash, instances in agent.counts[size].items():
+                for group_idx, group_instances in enumerate(
+                    _split_by_semantic_isomorphism(instances)
+                ):
+                    grouped_patterns.append(((wl_hash, group_idx), group_instances))
+
             sorted_patterns = sorted(
-                agent.counts[size].items(), 
-                key=lambda x: len(x[1]), 
+                grouped_patterns,
+                key=lambda x: len(x[1]),
                 reverse=True
             )
             
             logger.info(f"Size {size}: {len(sorted_patterns)} unique pattern types (taking up to {out_batch_size})")
             
-            for rank, (wl_hash, instances) in enumerate(sorted_patterns[:out_batch_size], 1):
+            for rank, (hash_key, instances) in enumerate(sorted_patterns[:out_batch_size], 1):
                 pattern_key = f"size_{size}_rank_{rank}"
                 original_count = len(instances)
                 
@@ -1132,7 +1192,14 @@ def pattern_growth(dataset, task, args, precomputed_data=None, preloaded_model=N
                 if 'id' not in graph.nodes[node]:
                     graph.nodes[node]['id'] = str(node)
         graphs.append(graph)
-    
+
+    # After this point we only use `graphs` and `embs`; the agent never needs the full graph.
+    if isinstance(dataset, LazyNeighborhoodGraphList):
+        import gc
+        dataset.dataset_graph = None
+        gc.collect()
+        logger.info("Freed main graph from RAM ; search phase uses only neighborhood list.")
+
     if args.use_whole_graphs:
         neighs = graphs
     else:
@@ -1236,7 +1303,7 @@ def pattern_growth(dataset, task, args, precomputed_data=None, preloaded_model=N
             agent = MemoryEfficientGreedyAgent(args.min_pattern_size, args.max_pattern_size,
                 model, graphs, embs, node_anchored=args.node_anchored,
                 analyze=args.analyze, model_type=args.method_type,
-                out_batch_size=args.out_batch_size)
+                out_batch_size=args.out_batch_size, n_workers=args.n_workers)
         else:
             agent = GreedySearchAgent(args.min_pattern_size, args.max_pattern_size,
                 model, graphs, embs, node_anchored=args.node_anchored,
@@ -1347,11 +1414,74 @@ def main():
     try:
         ensure_directories()
 
-        parser = argparse.ArgumentParser(description='Decoder arguments')
+        parser = argparse.ArgumentParser(description='Decoder arguments', conflict_handler='resolve')
         parse_encoder(parser)
         parse_decoder(parser)
         
         args = parser.parse_args()
+        model_metadata, applied_meta, meta_conflicts = utils.apply_model_metadata_to_args(
+            args,
+            parser=parser,
+            keys=[
+                "semantic_mode",
+                "use_label_features",
+                "label_feature_dim",
+                "label_encoder_backend",
+                "label_encoder_name",
+                "label_encoder_cache_dir",
+                "text_encoder_dim",
+                "text_label_dim",
+                "encoder_type",
+                "num_relations",
+                "num_bases",
+                "rel_reg_lambda",
+                "conv_type",
+                "hidden_dim",
+                "n_layers",
+                "skip",
+                "dropout",
+                "node_anchored",
+                "margin",
+                "order_threshold_mode",
+                "order_margin_factor",
+            ],
+            strict_conflicts=True,
+        )
+        if model_metadata:
+            logger.info("Loaded model metadata: %s", utils.model_metadata_path(args.model_path))
+            if applied_meta:
+                logger.info("Applied model metadata defaults: %s", ", ".join(
+                    "{}={}".format(k, applied_meta[k]) for k in sorted(applied_meta.keys())))
+            if meta_conflicts:
+                logger.warning("Metadata conflicts detected: %s", meta_conflicts)
+        use_label_features = getattr(args, "use_label_features", False)
+        label_feature_dim = getattr(args, "label_feature_dim", 16)
+        feature_preprocess.configure_feature_augment(
+            include_label_id=use_label_features,
+            label_feature_dim=label_feature_dim,
+            semantic_mode=getattr(args, "semantic_mode", "categorical"),
+            label_encoder_backend=getattr(args, "label_encoder_backend", "auto"),
+            label_encoder_name=getattr(args, "label_encoder_name",
+                "sentence-transformers/all-MiniLM-L6-v2"),
+            label_encoder_cache_dir=getattr(args, "label_encoder_cache_dir",
+                "artifacts/label_encoder_cache"),
+            text_encoder_dim=getattr(args, "text_encoder_dim", 384),
+            text_label_dim=getattr(args, "text_label_dim", 64),
+        )
+        utils.configure_semantic_hash(
+            semantic_mode=getattr(args, "semantic_mode", "categorical"),
+            label_encoder_backend=getattr(args, "label_encoder_backend", "auto"),
+            label_encoder_name=getattr(args, "label_encoder_name",
+                "sentence-transformers/all-MiniLM-L6-v2"),
+            label_encoder_cache_dir=getattr(args, "label_encoder_cache_dir",
+                "artifacts/label_encoder_cache"),
+            text_encoder_dim=getattr(args, "text_encoder_dim", 384),
+        )
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(args.seed)
 
         # Ensure user config is respected: clamp so max >= min and out_batch_size >= 1
         min_ps = getattr(args, 'min_pattern_size', 3)
@@ -1456,53 +1586,53 @@ def main():
             dataset = make_plant_dataset(size)
             task = 'graph'
 
-        # Adaptive mode selector
         if isinstance(dataset, list) and len(dataset) > 0 and isinstance(dataset[0], (nx.Graph, nx.DiGraph)):
-             num_nodes = sum(len(g) for g in dataset)
+            node_vocab, edge_vocab, metadata = label_vocab.initialize_or_load_vocabs(
+                dataset,
+                vocab_dir=args.vocab_dir,
+                vocab_version=args.vocab_version,
+                require_vocab=args.require_vocab,
+            )
+            utils.set_label_vocabs(node_vocab, edge_vocab, metadata.get("vocab_version"))
+            logger.info(
+                "Loaded vocab artifacts: version=%s node_labels=%s edge_types=%s",
+                metadata.get("vocab_version"),
+                metadata.get("num_node_labels"),
+                metadata.get("num_edge_types"),
+            )
         else:
-             num_nodes = 0 
-        
-        threshold = getattr(args, 'auto_streaming_threshold', 100000)
-        
-        # Check if streaming should be used (large graph OR many trials)
-        use_streaming = (num_nodes > threshold or args.n_trials > 2000)
-        
-        logger.info("\nStarting pattern mining...")
-        if use_streaming:
-            logger.info(f"Adaptive Mode: Enabling Batch Processing for {num_nodes} nodes. 🚀")
-            
-            # Automatically tune workers for performance vs stability
-            total_nodes = num_nodes
-            original_workers = args.streaming_workers
-            
-            if total_nodes > 3500000:
-                args.streaming_workers = 0
-                reason = "Maximum Stability (Sequential)"
-            elif total_nodes > 500000:
-                args.streaming_workers = min(original_workers, 2)
-                reason = "Balanced Performance (2 workers)"
-            else: 
-                args.streaming_workers = original_workers
-                reason = "Maximum Speed ({} workers)".format(args.streaming_workers)
+            utils.set_label_vocabs(None, None, None)
 
-            if args.streaming_workers != original_workers:
-                logger.info(f"⚠ SMART SCALING: Graph size {total_nodes:,} nodes.")
-                logger.info(f"  Adjusting streaming_workers: {original_workers} -> {args.streaming_workers} for {reason}.")
-            
-            # Ensure search phase uses the same optimized worker count
-            args.n_workers = args.streaming_workers
-            if args.n_workers <= 0:
-                logger.info("Sequential Search Mode enabled (n_workers=0)")
-            # Pass dataset and then clear local reference
-            pattern_growth_streaming(dataset, task, args)
-            if isinstance(dataset, list):
-                dataset.clear()
-            dataset = None
+        if isinstance(dataset, list) and len(dataset) > 0 and isinstance(dataset[0], (nx.Graph, nx.DiGraph)):
+            num_nodes = sum(len(g) for g in dataset)
         else:
-            logger.info("Adaptive Mode: Standard Sequential Processing.")
-            if not hasattr(args, 'n_workers'):
-                args.n_workers = 1
-            pattern_growth(dataset, task, args)
+            num_nodes = 0
+
+        logger.info("\nStarting pattern mining (batch processing)...")
+        # Tune workers by graph size for stability
+        total_nodes = num_nodes
+        original_workers = args.streaming_workers
+        if total_nodes > 3500000:
+            args.streaming_workers = 0
+            reason = "Maximum Stability (Sequential)"
+        elif total_nodes > 500000:
+            args.streaming_workers = min(original_workers, 2)
+            reason = "Balanced Performance (2 workers)"
+        else:
+            args.streaming_workers = original_workers
+            reason = "Maximum Speed ({} workers)".format(args.streaming_workers)
+
+        if args.streaming_workers != original_workers:
+            logger.info("Worker scaling: %s nodes -> streaming_workers %s -> %s (%s).",
+                total_nodes, original_workers, args.streaming_workers, reason)
+        args.n_workers = args.streaming_workers
+        if args.n_workers <= 0:
+            logger.info("Sequential search (n_workers=0)")
+
+        pattern_growth_streaming(dataset, task, args)
+        if isinstance(dataset, list):
+            dataset.clear()
+        dataset = None
         
         import gc
         gc.collect()
