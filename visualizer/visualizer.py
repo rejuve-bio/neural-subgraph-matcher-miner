@@ -7,6 +7,9 @@ It extracts graph data, processes templates, and generates browsable visualizati
 import os
 import logging
 import networkx as nx
+import pickle
+import torch
+import json
 from typing import Dict, List, Any, Optional
 
 from .config import DEFAULT_OUTPUT_DIR, DEFAULT_TEMPLATE_NAME
@@ -15,11 +18,356 @@ from .template_processor import HTMLTemplateProcessor
 from .pattern_utils import select_representative_pattern, generate_pattern_filename
 from .index_generator import IndexHTMLGenerator
 from .utils import clear_visualizations, ensure_directory_exists, validate_graph_data
+from common import utils
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+
+def _semantic_node_match(n1, n2):
+    return (
+        int(n1.get("anchor", 0)) == int(n2.get("anchor", 0))
+        and int(n1.get("label_id", 0)) == int(n2.get("label_id", 0))
+        and str(utils.node_semantic_label(n1)) == str(utils.node_semantic_label(n2))
+    )
+
+
+def _semantic_edge_match(e1, e2):
+    return (
+        int(e1.get("type_id", 0)) == int(e2.get("type_id", 0))
+        and str(utils.edge_semantic_label(e1))
+        == str(utils.edge_semantic_label(e2))
+    )
+
+
+def _semantic_isomorphic(g1, g2):
+    if g1.is_directed() != g2.is_directed():
+        return False
+    graph_matcher = (
+        nx.algorithms.isomorphism.DiGraphMatcher
+        if g1.is_directed()
+        else nx.algorithms.isomorphism.GraphMatcher
+    )
+    return graph_matcher(
+        g1, g2, node_match=_semantic_node_match, edge_match=_semantic_edge_match
+    ).is_isomorphic()
+
+
+def _split_by_semantic_isomorphism(instances):
+    """Split a hash bucket into exact semantic isomorphism groups."""
+    groups = []
+    for inst in instances:
+        placed = False
+        for group in groups:
+            if _semantic_isomorphic(inst, group[0]):
+                group.append(inst)
+                placed = True
+                break
+        if not placed:
+            groups.append([inst])
+    return groups
+
+def save_instances_to_json(output_data, args, graph_context=None):
+    json_results = []
+    if graph_context:
+        json_results.append({'type': 'graph_context', 'data': graph_context})
+        logger.info("Added graph context to JSON results")
+    else:
+        logger.info("No graph context provided for JSON results")
+
+    for pattern_key, pattern_info in output_data.items():
+        for instance in pattern_info['instances']:
+            pattern_data = {
+                'nodes': [
+                    {
+                        'id': str(node),
+                        'label': instance.nodes[node].get('label', ''),
+                        'anchor': instance.nodes[node].get('anchor', 0),
+                        **{k: v for k, v in instance.nodes[node].items()
+                           if k not in ['label', 'anchor']}
+                    }
+                    for node in instance.nodes()
+                ],
+                'edges': [
+                    {
+                        'source': str(u),
+                        'target': str(v),
+                        'type': data.get('type', ''),
+                        **{k: v for k, v in data.items() if k != 'type'}
+                    }
+                    for u, v, data in instance.edges(data=True)
+                ],
+                'metadata': {
+                    'pattern_key': pattern_key,
+                    'size': pattern_info['size'],
+                    'rank': pattern_info['rank'],
+                    'num_nodes': len(instance),
+                    'num_edges': instance.number_of_edges(),
+                    'is_directed': instance.is_directed(),
+                    'original_count': pattern_info['count'],
+                    'discovery_frequency': pattern_info['original_count'],
+                    'duplicates_removed': pattern_info['duplicates_removed'],
+                    'frequency_score': pattern_info['count'] / args.n_trials if args.n_trials > 0 else 0
+                }
+            }
+
+            json_results.append(pattern_data)
+
+    base_path = os.path.splitext(args.out_path)[0]
+    json_path = base_path + '_all_instances.json'
+
+    os.makedirs(os.path.dirname(json_path), exist_ok=True)
+
+    with open(json_path, 'w') as f:
+        json.dump(json_results, f, indent=2)
+
+    logger.info(f"JSON saved to: {json_path}")
+    return json_path
+
+
+def save_and_visualize_all_instances(agent, args):
+    try:
+        logger.info("=" * 70)
+        logger.info("SAVING AND VISUALIZING ALL PATTERN INSTANCES")
+        logger.info("=" * 70)
+        graph_context = {}
+
+        if not hasattr(agent, 'counts'):
+            logger.error("Agent has no 'counts' attribute!")
+            return None
+
+        if hasattr(agent, 'dataset'):
+            logger.info(f"Agent has dataset attribute with {len(agent.dataset)} graphs")
+        else:
+            logger.error("Agent has no 'dataset' attribute!")
+
+        if hasattr(agent, 'dataset') and agent.dataset:
+            total_nodes = sum(g.number_of_nodes() for g in agent.dataset)
+            total_edges = sum(g.number_of_edges() for g in agent.dataset)
+            graph_types = set('directed' if g.is_directed() else 'undirected' for g in agent.dataset)
+
+            graph_context = {
+                'num_graphs': len(agent.dataset),
+                'total_nodes': total_nodes,
+                'total_edges': total_edges,
+                'graph_types': list(graph_types),
+                'sampling_trials': args.n_trials,
+                'neighborhoods_sampled': getattr(args, 'n_neighborhoods', 0),
+                'sample_method': getattr(args, 'sample_method', 'unknown'),
+                'min_pattern_size': args.min_pattern_size,
+                'max_pattern_size': args.max_pattern_size
+            }
+            logger.info(f"Graph context created: {graph_context}")
+        else:
+            logger.warning("Skipping graph_context - agent.dataset is empty or missing")
+
+        if not graph_context:
+            graph_context = {
+                'num_graphs': 0,
+                'total_nodes': 0,
+                'total_edges': 0,
+                'graph_types': [],
+                'sampling_trials': args.n_trials,
+                'neighborhoods_sampled': getattr(args, 'n_neighborhoods', 0),
+                'sample_method': getattr(args, 'sample_method', 'unknown'),
+                'min_pattern_size': args.min_pattern_size,
+                'max_pattern_size': args.max_pattern_size,
+                'note': 'Dataset not available on agent'
+            }
+            logger.info("Using fallback graph_context")
+
+        if not agent.counts:
+            logger.warning("Agent.counts is empty - no patterns to save")
+            return None
+
+        logger.info(f"Agent.counts has {len(agent.counts)} size categories")
+
+        output_data = {}
+        total_instances = 0
+        total_unique_instances = 0
+        total_visualizations = 0
+        total_sizes = args.max_pattern_size - args.min_pattern_size + 1
+
+        out_batch_size = max(1, getattr(args, "out_batch_size", 3))
+        logger.info(
+            "save_and_visualize: using out_batch_size=%s (up to %s patterns per size)",
+            out_batch_size,
+            out_batch_size,
+        )
+
+        for size_idx, size in enumerate(range(args.min_pattern_size, args.max_pattern_size + 1)):
+            if size not in agent.counts:
+                logger.debug(f"No patterns found for size {size}")
+                continue
+
+            grouped_patterns = []
+            for wl_hash, instances in agent.counts[size].items():
+                for group_idx, group_instances in enumerate(
+                    _split_by_semantic_isomorphism(instances)
+                ):
+                    grouped_patterns.append(((wl_hash, group_idx), group_instances))
+
+            sorted_patterns = sorted(
+                grouped_patterns,
+                key=lambda x: len(x[1]),
+                reverse=True,
+            )
+
+            logger.info(
+                "Size %s: %s unique pattern types (taking up to %s)",
+                size,
+                len(sorted_patterns),
+                out_batch_size,
+            )
+
+            for rank, (hash_key, instances) in enumerate(sorted_patterns[:out_batch_size], 1):
+                pattern_key = f"size_{size}_rank_{rank}"
+                original_count = len(instances)
+
+                logger.debug(f"Processing {pattern_key}: {original_count} raw instances")
+
+                unique_instances = []
+                seen_signatures = set()
+
+                for instance in instances:
+                    try:
+                        node_ids = frozenset(instance.nodes[n].get('id', n) for n in instance.nodes())
+
+                        edges = []
+                        for u, v in instance.edges():
+                            u_id = instance.nodes[u].get('id', u)
+                            v_id = instance.nodes[v].get('id', v)
+                            edge = tuple(sorted([u_id, v_id]))
+                            edges.append(edge)
+                        edge_ids = frozenset(edges)
+
+                        signature = (node_ids, edge_ids)
+
+                        if signature not in seen_signatures:
+                            seen_signatures.add(signature)
+                            unique_instances.append(instance)
+
+                    except Exception as e:
+                        logger.warning(f"Error processing instance in {pattern_key}: {e}")
+                        continue
+
+                count = len(unique_instances)
+                duplicates = original_count - count
+
+                output_data[pattern_key] = {
+                    'size': size,
+                    'rank': rank,
+                    'count': count,
+                    'instances': unique_instances,
+
+                    'original_count': count,
+                    'discovery_hits': original_count,
+                    'duplicates_removed': duplicates,
+                    'duplication_rate': duplicates / original_count if original_count > 0 else 0,
+
+                    'frequency_score': count / args.n_trials if args.n_trials > 0 else 0,
+                    'discovery_rate': original_count / count if count > 0 else 0,
+
+                    'mining_trials': args.n_trials,
+                    'min_pattern_size': args.min_pattern_size,
+                    'max_pattern_size': args.max_pattern_size
+                }
+
+                total_instances += original_count
+                total_unique_instances += count
+
+                if duplicates > 0:
+                    logger.info(
+                        f"  {pattern_key}: {count} unique instances "
+                        f"(from {original_count}, removed {duplicates} duplicates)"
+                    )
+                else:
+                    logger.info(f"  {pattern_key}: {count} instances")
+
+                try:
+                    if rank == 1 and size == args.min_pattern_size:
+                        output_dir = os.path.join("plots", "cluster")
+                        if args.visualize_instances:
+                            clear_visualizations(output_dir, mode="folder")
+                        else:
+                            clear_visualizations(output_dir, mode="flat")
+
+                    if args.visualize_instances:
+                        success = visualize_all_pattern_instances(
+                            pattern_instances=unique_instances,
+                            pattern_key=pattern_key,
+                            count=count,
+                            output_dir=os.path.join("plots", "cluster"),
+                            visualize_instances=True
+                        )
+                    else:
+                        representative = unique_instances[0]
+                        success = visualize_pattern_graph_ext(
+                            pattern=representative,
+                            args=args,
+                            count_by_size={size: rank},
+                            pattern_key=pattern_key
+                        )
+
+                    if success:
+                        total_visualizations += (count if args.visualize_instances else 1)
+                        logger.info(f"    ✓ Visualized {pattern_key}")
+                    else:
+                        logger.warning(f"    ✗ Visualization failed for {pattern_key}")
+                except Exception as e:
+                    logger.error(f"    ✗ Visualization error: {e}")
+
+            current_done = size_idx + 1
+            if total_sizes:
+                _ = int(current_done / total_sizes * 100)
+
+        base_path = os.path.splitext(args.out_path)[0]
+        pkl_path = base_path + '_all_instances.pkl'
+
+        logger.info(f"Saving to: {pkl_path}")
+
+        with open(pkl_path, 'wb') as f:
+            pickle.dump(output_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+        json_path = save_instances_to_json(output_data, args, graph_context)
+        logger.info(f"JSON saved to: {json_path}")
+
+        if os.path.exists(pkl_path):
+            file_size = os.path.getsize(pkl_path) / 1024
+            logger.info(f"✓ PKL file created successfully ({file_size:.1f} KB)")
+        else:
+            logger.error("✗ PKL file was not created!")
+            return None
+
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            logger.info("GPU memory cleared after visualization.")
+
+        logger.info("=" * 70)
+        logger.info("✓ COMPLETE")
+        logger.info("=" * 70)
+        logger.info(f"PKL file: {pkl_path}")
+        logger.info(f"  Pattern types: {len(output_data)}")
+        logger.info(f"  Total discoveries: {total_instances}")
+        logger.info(f"  Unique instances: {total_unique_instances}")
+        logger.info(f"  Duplicates removed: {total_instances - total_unique_instances}")
+
+        if total_instances > 0:
+            dup_rate = (total_instances - total_unique_instances) / total_instances * 100
+            logger.info(f"  Duplication rate: {dup_rate:.1f}%")
+
+        logger.info(f"HTML visualizations: plots/cluster/")
+        logger.info(f"  Successfully created: {total_visualizations} files")
+
+        logger.info("=" * 70)
+        return pkl_path
+
+    except Exception as e:
+        logger.error(f"FATAL ERROR in save_and_visualize_all_instances: {e}")
+        return None
 
 def visualize_pattern_graph_ext(pattern: nx.Graph, args: Any, 
                                 count_by_size: Dict[int, int], 
