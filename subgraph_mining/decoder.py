@@ -110,6 +110,17 @@ def ensure_directories():
         logger.info(f"Ensured directory exists: {directory}")
 
 
+def load_state_dict_and_sync_arch(args):
+    state_dict = torch.load(args.model_path, map_location=utils.get_device())
+    w = state_dict.get("emb_model.pre_mp.0.weight")
+    s = state_dict.get("emb_model.learnable_skip")
+    if w is not None:
+        args.hidden_dim = int(w.shape[0])
+    if s is not None and s.ndim == 2:
+        args.n_layers = int(s.shape[0])
+    return state_dict
+
+
 def bfs_chunk(graph, start_node, max_size):
     visited = set([start_node])
     queue = [start_node]
@@ -180,14 +191,16 @@ def _process_chunk(args_tuple):
 def pattern_growth_streaming(dataset, task, args):
     """Entry point for batch processing mode."""
     import gc
+    state_dict = load_state_dict_and_sync_arch(args)
+
     if args.method_type == "end2end":
         model = models.End2EndOrder(1, args.hidden_dim, args)
     elif args.method_type == "mlp":
         model = models.BaselineMLP(1, args.hidden_dim, args)
     else:
         model = models.OrderEmbedder(1, args.hidden_dim, args)
-    
-    model.load_state_dict(torch.load(args.model_path, map_location=utils.get_device()))
+
+    model.load_state_dict(state_dict)
     model.eval()
     
     # Batched embedding generation
@@ -250,6 +263,10 @@ def pattern_growth(dataset, task, args, precomputed_data=None, preloaded_model=N
     start_time = time.time()
         
     # Load model (or use preloaded)
+    state_dict = None
+    if not preloaded_model:
+        state_dict = load_state_dict_and_sync_arch(args)
+
     if preloaded_model:
         model = preloaded_model
     elif args.method_type == "end2end":
@@ -259,9 +276,8 @@ def pattern_growth(dataset, task, args, precomputed_data=None, preloaded_model=N
     else:
         model = models.OrderEmbedder(1, args.hidden_dim, args)
     
-    if not preloaded_model:
-        model.load_state_dict(torch.load(args.model_path,
-            map_location=utils.get_device()))
+    if state_dict is not None:
+        model.load_state_dict(state_dict)
     
     model.to(utils.get_device())
     model.eval()
