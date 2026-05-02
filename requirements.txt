@@ -1,5 +1,5 @@
 deepsnap == 0.2.1
-matplotlib == 2.1.1
+matplotlib == 3.10.9
 networkx == 2.4
 scikit_learn == 1.8.0
 scipy == 0.19.1
